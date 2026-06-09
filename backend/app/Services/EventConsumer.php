@@ -54,8 +54,25 @@ class EventConsumer
         echo "[$timestamp]  Tipo: " . ($event['event_type'] ?? 'desconocido') . "\n";
         echo "[$timestamp]  Aggregate ID: " . ($event['aggregate_id'] ?? 'N/A') . "\n";
         
-        if (($event['event_type'] ?? '') === 'RutaAsignada') {
+        $eventType = $event['event_type'] ?? '';
+        if ($eventType === 'RutaAsignada') {
             $this->handleRutaAsignada($event);
+        } elseif ($eventType === 'MorosidadActualizada') {
+            $this->handleMorosidadActualizada($event);
+        }
+    }
+    
+    private function handleMorosidadActualizada($event)
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        echo "[$timestamp]  Procesando MorosidadActualizada (Refrescando mapas)...\n";
+        
+        try {
+            // Llamar a la función de la BD que refresca las vistas materializadas
+            $this->db->query("SELECT neplatic.refrescar_mapas_calor()");
+            echo "[$timestamp]  Mapas de calor refrescados exitosamente.\n";
+        } catch (\Exception $e) {
+            echo "[$timestamp]  Error al refrescar mapas: " . $e->getMessage() . "\n";
         }
     }
     

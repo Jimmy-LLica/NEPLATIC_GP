@@ -46,7 +46,7 @@ export default {
         if (response.data && response.data.token) {
           localStorage.setItem('token', response.data.token)
           localStorage.setItem('usuario', JSON.stringify(response.data.usuario))
-          this.$router.push('/dashboard')
+          window.location.href = '/dashboard'
         } else {
           this.errorMessage = 'Respuesta inválida del servidor'
         }

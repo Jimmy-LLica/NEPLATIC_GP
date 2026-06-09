@@ -34,10 +34,8 @@ const logout = () => {
   console.log('Cerrando sesión...')  // para depurar
   localStorage.removeItem('token')
   localStorage.removeItem('usuario')
-  // Redirige al login
-  router.push('/login')
-  // Opcional: fuerza recarga completa para evitar datos en caché
-  // window.location.href = '/login'
+  // Fuerza recarga completa para limpiar estado y evitar datos en caché
+  window.location.href = '/login'
 }
 </script>
 

@@ -12,8 +12,6 @@
 </template>
 
 <script>
-import L from 'leaflet'
-import 'leaflet/dist/leaflet.css'
 import api from '../api'
 
 export default {
@@ -21,18 +19,26 @@ export default {
   data() {
     return {
       cargando: true,
-      map: null,
       sectores: []
     }
   },
+  created() {
+    // Definimos view como propiedad no reactiva para evitar que Vue 3
+    // envuelva los objetos de ArcGIS en Proxies, lo cual causa errores graves.
+    this.view = null;
+  },
   async mounted() {
     await this.cargarSectores()
+  },
+  beforeUnmount() {
+    if (this.view) {
+      this.view.destroy()
+    }
   },
   methods: {
     async cargarSectores() {
       try {
         const response = await api.get('/mapa/sectores')
-        // La respuesta ya viene en response.data (axios lo decodifica)
         if (response.data && response.data.success && Array.isArray(response.data.data)) {
           this.sectores = response.data.data
           if (this.sectores.length === 0) {
@@ -51,61 +57,111 @@ export default {
       }
     },
     inicializarMapa() {
-      // Crear el mapa si no existe
-      if (!this.map) {
-        this.map = L.map(this.$refs.mapContainer).setView([-18.0111, -70.2528], 13)
-        // Usamos una capa base gratuita y sin necesidad de API key
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-          subdomains: 'abcd',
-          maxZoom: 19,
-          minZoom: 3
-        }).addTo(this.map)
-      }
+      // Usar require global de ArcGIS CDN
+      window.require([
+        "esri/Map",
+        "esri/views/MapView",
+        "esri/Graphic",
+        "esri/layers/GraphicsLayer",
+        "esri/symbols/SimpleFillSymbol"
+      ], (Map, MapView, Graphic, GraphicsLayer, SimpleFillSymbol) => {
+        
+        const map = new Map({
+          basemap: "osm" // Basemap gratuito de OSM a través de ArcGIS
+        });
 
-      // Agregar cada sector como capa GeoJSON
-      this.sectores.forEach(sector => {
-        if (sector.geojson) {
-          const color = sector.color_predominante || '#CCCCCC'
-          const layer = L.geoJSON(sector.geojson, {
-            style: {
-              color: color,
-              weight: 2,
-              fillColor: color,
-              fillOpacity: 0.6
-            },
-            onEachFeature: (feature, layer) => {
-              // Popup con información del sector
-              layer.bindPopup(`
-                <b>${sector.nombre_sector}</b><br>
-                Deuda Total: S/ ${Number(sector.monto_total_pendiente).toLocaleString()}<br>
-                Deuda Coactiva: S/ ${Number(sector.monto_coactiva).toLocaleString()}<br>
-                Contribuyentes Morosos: ${sector.total_contribuyentes_morosos}<br>
-                Efectividad: ${sector.tasa_efectividad_notificacion}%
-              `)
-            }
-          }).addTo(this.map)
-        } else {
-          console.warn('Sector sin geojson:', sector)
-        }
-      })
+        this.view = new MapView({
+          container: this.$refs.mapContainer,
+          map: map,
+          center: [-70.2528, -18.0111], // Lng, Lat para ArcGIS
+          zoom: 13
+        });
 
-      // Ajustar el zoom para que se vean todos los sectores (opcional)
-      if (this.sectores.length > 0 && this.map) {
-        const bounds = []
+        const graphicsLayer = new GraphicsLayer();
+        map.add(graphicsLayer);
+
+        const graphics = [];
+
         this.sectores.forEach(sector => {
-          if (sector.geojson && sector.geojson.coordinates) {
-            // Extraer coordenadas del polígono para calcular el límite
-            const coords = sector.geojson.coordinates[0]
-            coords.forEach(coord => bounds.push(L.latLng(coord[1], coord[0])))
-          }
-        })
-        if (bounds.length) {
-          this.map.fitBounds(bounds)
-        }
-      }
+          if (sector.geojson) {
+            const color = sector.color_predominante || '#CCCCCC';
+            
+            // ArcGIS Graphic requiere anillos (rings) para polígonos
+            let rings = [];
+            if (sector.geojson.type === 'Polygon') {
+              rings = sector.geojson.coordinates;
+            } else if (sector.geojson.type === 'MultiPolygon') {
+              sector.geojson.coordinates.forEach(poly => {
+                poly.forEach(ring => {
+                   rings.push(ring);
+                });
+              });
+            }
 
-      this.cargando = false
+            const fillSymbol = new SimpleFillSymbol({
+              color: [...this.hexToRgb(color), 0.6], // color con opacidad
+              outline: {
+                color: [255, 255, 255, 0.8],
+                width: 1
+              }
+            });
+
+            const polygon = {
+              type: "polygon",
+              rings: rings
+            };
+
+            const popupTemplate = {
+              title: "{nombre_sector}",
+              content: `
+                <b>Deuda Total:</b> S/ {monto_total_pendiente}<br>
+                <b>Deuda Coactiva:</b> S/ {monto_coactiva}<br>
+                <b>Contribuyentes Morosos:</b> {total_contribuyentes_morosos}<br>
+                <b>Efectividad:</b> {tasa_efectividad_notificacion}%
+              `
+            };
+
+            const graphic = new Graphic({
+              geometry: polygon,
+              symbol: fillSymbol,
+              attributes: {
+                nombre_sector: sector.nombre_sector,
+                monto_total_pendiente: Number(sector.monto_total_pendiente).toLocaleString('es-PE', { minimumFractionDigits: 2 }),
+                monto_coactiva: Number(sector.monto_coactiva).toLocaleString('es-PE', { minimumFractionDigits: 2 }),
+                total_contribuyentes_morosos: sector.total_contribuyentes_morosos,
+                tasa_efectividad_notificacion: sector.tasa_efectividad_notificacion
+              },
+              popupTemplate: popupTemplate
+            });
+
+            graphics.push(graphic);
+            graphicsLayer.add(graphic);
+          }
+        });
+
+        this.view.when(() => {
+          if (graphics.length > 0) {
+            this.view.goTo(graphics).catch(err => {
+              if (err.name !== "AbortError") {
+                console.error("Error navigating to graphics: ", err);
+              }
+            });
+          }
+          this.cargando = false;
+        });
+
+      });
+    },
+    hexToRgb(hex) {
+      hex = hex.replace(/^#/, '');
+      if (hex.length === 3) {
+          hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      }
+      var bigint = parseInt(hex, 16);
+      var r = (bigint >> 16) & 255;
+      var g = (bigint >> 8) & 255;
+      var b = bigint & 255;
+      return [r, g, b];
     }
   }
 }
@@ -146,6 +202,8 @@ export default {
   border-radius: 10px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.1);
   margin-top: 1rem;
+  outline: none; /* ArcGIS focus outline removal */
+  overflow: hidden; /* Ensure radius applies to inner canvas */
 }
 .loading {
   text-align: center;
