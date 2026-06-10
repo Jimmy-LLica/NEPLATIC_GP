@@ -152,8 +152,8 @@ class LoginWindow:
             command=self.master.destroy,
             bg=PALETTE["surface_soft"],
             fg=PALETTE["text"],
-            hover_bg="#e2e8f0",
-            active_bg="#e2e8f0",
+            hover_bg=PALETTE["surface_alt"],
+            active_bg=PALETTE["surface_alt"],
             border=PALETTE["border"],
             font=("Segoe UI Semibold", 10),
             pady=10,
@@ -216,15 +216,31 @@ class MainWindow:
         self._current_view_widget = None
         self._ruta_controller = None
         self._report_controller = None
+        self._redis_consumer = None
 
         self._load_profile_and_permissions()
         self._setup_window()
         self._setup_styles()
         self._create_shell()
+        self._start_event_listener()
         self.show_view("dashboard")
 
         self.master.protocol("WM_DELETE_WINDOW", self.confirmar_salida)
         animate_window_in(self.master)
+
+    def _start_event_listener(self):
+        from src.services.redis_consumer import RedisConsumer
+        from src.ui.modern_widgets import ToastNotification
+
+        def on_event(payload):
+            event_type = payload.get('event_type')
+            if event_type in ['visita_registrada', 'notificacion_creada']:
+                msg = f"Nueva actualización: {event_type.replace('_', ' ')}"
+                # Run on main UI thread
+                self.master.after(0, lambda: ToastNotification(self.master, msg))
+
+        self._redis_consumer = RedisConsumer(callback=on_event)
+        self._redis_consumer.start()
 
     @property
     def ruta_controller(self):
@@ -319,8 +335,8 @@ class MainWindow:
             command=lambda: self.show_view("perfil"),
             bg=PALETTE["surface_soft"],
             fg=PALETTE["text"],
-            hover_bg="#e2e8f0",
-            active_bg="#e2e8f0",
+            hover_bg=PALETTE["surface_alt"],
+            active_bg=PALETTE["surface_alt"],
             border=PALETTE["border"],
             font=("Segoe UI Semibold", 9),
             padx=12,
@@ -367,8 +383,8 @@ class MainWindow:
         top = tk.Frame(self.sidebar, bg=PALETTE["sidebar"], padx=18, pady=18)
         top.grid(row=0, column=0, sticky="ew")
         tk.Label(top, text="NEPLATIC", bg=PALETTE["sidebar"], fg="#38bdf8", font=("Segoe UI Semibold", 9)).pack(anchor="w")
-        tk.Label(top, text="Administracion unificada", bg=PALETTE["sidebar"], fg="#f8fafc", font=("Segoe UI Semibold", 17)).pack(anchor="w", pady=(6, 2))
-        tk.Label(top, text="Navegacion rapida para el panel.", bg=PALETTE["sidebar"], fg="#94a3b8", wraplength=220, justify="left", font=("Segoe UI", 9)).pack(anchor="w")
+        tk.Label(top, text="Administracion unificada", bg=PALETTE["sidebar"], fg=PALETTE["text"], font=("Segoe UI Semibold", 17)).pack(anchor="w", pady=(6, 2))
+        tk.Label(top, text="Navegacion rapida para el panel.", bg=PALETTE["sidebar"], fg=PALETTE["text_muted"], wraplength=220, justify="left", font=("Segoe UI", 9)).pack(anchor="w")
 
         nav = tk.Frame(self.sidebar, bg=PALETTE["sidebar"], padx=12, pady=10)
         nav.grid(row=1, column=0, sticky="new")
@@ -392,8 +408,8 @@ class MainWindow:
 
         footer = tk.Frame(self.sidebar, bg=PALETTE["sidebar"], padx=18, pady=16)
         footer.grid(row=3, column=0, sticky="sew")
-        tk.Label(footer, text="Sesion activa", bg=PALETTE["sidebar"], fg="#94a3b8", font=("Segoe UI", 8)).pack(anchor="w")
-        tk.Label(footer, text="Panel listo para operar", bg=PALETTE["sidebar"], fg="#e2e8f0", font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(4, 0))
+        tk.Label(footer, text="Sesion activa", bg=PALETTE["sidebar"], fg=PALETTE["text_muted"], font=("Segoe UI", 8)).pack(anchor="w")
+        tk.Label(footer, text="Panel listo para operar", bg=PALETTE["sidebar"], fg=PALETTE["text"], font=("Segoe UI Semibold", 10)).pack(anchor="w", pady=(4, 0))
 
     def _add_nav_button(self, parent, key, text, command):
         btn = HoverButton(
@@ -425,7 +441,7 @@ class MainWindow:
                 btn._bg = PALETTE["sidebar"]
                 btn._hover_bg = PALETTE["sidebar_soft"]
                 btn._border = PALETTE["sidebar"]
-                btn.configure(bg=PALETTE["sidebar"], fg="#cbd5e1", highlightbackground=PALETTE["sidebar"])
+                btn.configure(bg=PALETTE["sidebar"], fg=PALETTE["text_muted"], highlightbackground=PALETTE["sidebar"])
 
     def _hide_current_view(self):
         if self._current_view_widget is not None:
@@ -555,8 +571,8 @@ class MainWindow:
             command=self.ejecutar_sincronizacion_manual,
             bg=PALETTE["surface_soft"],
             fg=PALETTE["text"],
-            hover_bg="#e2e8f0",
-            active_bg="#e2e8f0",
+            hover_bg=PALETTE["surface_alt"],
+            active_bg=PALETTE["surface_alt"],
             border=PALETTE["border"],
             font=("Segoe UI Semibold", 9),
             padx=12,
@@ -595,47 +611,57 @@ class MainWindow:
 
         row = tk.Frame(quick_inner, bg=PALETTE["surface"])
         row.pack(fill=tk.X)
-        HoverButton(row, text="Perfil", command=lambda: self.show_view("perfil"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
+        HoverButton(row, text="Perfil", command=lambda: self.show_view("perfil"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg=PALETTE["surface_alt"], active_bg=PALETTE["surface_alt"], border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
         if "rutas:visualizar_propias" in self.user_permissions:
-            HoverButton(row, text="Rutas", command=lambda: self.show_view("rutas"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
+            HoverButton(row, text="Rutas", command=lambda: self.show_view("rutas"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg=PALETTE["surface_alt"], active_bg=PALETTE["surface_alt"], border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
         if "notificaciones:registrar" in self.user_permissions:
-            HoverButton(row, text="Notificar", command=lambda: self.show_view("notificar"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
+            HoverButton(row, text="Notificar", command=lambda: self.show_view("notificar"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg=PALETTE["surface_alt"], active_bg=PALETTE["surface_alt"], border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
         if "usuarios:gestionar" in self.user_permissions:
-            HoverButton(row, text="Usuarios", command=lambda: self.show_view("usuarios"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
+            HoverButton(row, text="Usuarios", command=lambda: self.show_view("usuarios"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg=PALETTE["surface_alt"], active_bg=PALETTE["surface_alt"], border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
         if "reportes:descargar" in self.user_permissions:
-            HoverButton(row, text="Reportes", command=lambda: self.show_view("reportes"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
+            HoverButton(row, text="Reportes", command=lambda: self.show_view("reportes"), bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg=PALETTE["surface_alt"], active_bg=PALETTE["surface_alt"], border=PALETTE["border"], font=("Segoe UI Semibold", 9), pady=10).pack(side=tk.LEFT, padx=(0, 10))
 
         self.master.after(30, self._load_dashboard_data)
         container.refresh = lambda: self._load_dashboard_data()
         return container
 
     def _load_dashboard_data(self):
-        route_count = 0
-        debt_count = 0
-        top_count = 0
-
-        try:
-            routes = self.ruta_controller.listar_rutas_usuario()
-            route_count = len(routes)
-        except Exception as exc:
-            logger.error("Error cargando rutas del dashboard: %s", exc)
-
-        try:
-            debt_rows = self.ruta_controller.listar_deudas_asignadas()
-            debt_count = len(debt_rows)
-        except Exception as exc:
-            logger.error("Error cargando deudas del dashboard: %s", exc)
-
-        try:
-            report_data = self.report_controller.exportable_dashboard()
-            top_count = len(report_data.get("top_deudores", []))
-        except Exception:
+        import threading
+        
+        def fetch_data():
+            route_count = 0
+            debt_count = 0
             top_count = 0
 
-        if len(self._dashboard_stat_labels) >= 3:
-            self._dashboard_stat_labels[0].config(text=str(route_count))
-            self._dashboard_stat_labels[1].config(text=str(debt_count))
-            self._dashboard_stat_labels[3].config(text=str(top_count))
+            try:
+                routes = self.ruta_controller.listar_rutas_usuario()
+                route_count = len(routes)
+            except Exception as exc:
+                logger.error("Error cargando rutas del dashboard: %s", exc)
+
+            try:
+                debt_rows = self.ruta_controller.listar_deudas_asignadas()
+                debt_count = len(debt_rows)
+            except Exception as exc:
+                logger.error("Error cargando deudas del dashboard: %s", exc)
+
+            try:
+                report_data = self.report_controller.exportable_dashboard()
+                top_count = len(report_data.get("top_deudores", []))
+            except Exception:
+                top_count = 0
+                
+            def update_ui():
+                if len(self._dashboard_stat_labels) >= 3:
+                    self._dashboard_stat_labels[0].config(text=str(route_count))
+                    self._discord_stat_labels = getattr(self, '_dashboard_stat_labels', [])
+                    if len(self._discord_stat_labels) >= 3:
+                        self._discord_stat_labels[1].config(text=str(debt_count))
+                        self._discord_stat_labels[3].config(text=str(top_count))
+            
+            self.master.after(0, update_ui)
+
+        threading.Thread(target=fetch_data, daemon=True).start()
 
     def _load_profile_view(self):
         container = tk.Frame(self.content_host, bg=PALETTE["app_bg"])
@@ -746,6 +772,8 @@ class MainWindow:
                 self.report_controller.close()
             except Exception:
                 pass
+            if self._redis_consumer:
+                self._redis_consumer.stop()
             self.master.destroy()
             self.login_window_obj.master.destroy()
 

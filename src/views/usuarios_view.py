@@ -61,6 +61,7 @@ class UsuariosView(ttk.Frame):
         HoverButton(actions, text="Editar", command=self.edit_selected, bg=PALETTE["surface"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
         HoverButton(actions, text="Activar / Desactivar", command=self.toggle_selected, bg=PALETTE["surface"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
         HoverButton(actions, text="Restablecer clave", command=self.reset_password_selected, bg=PALETTE["surface"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
+        HoverButton(actions, text="Bloquear", command=self.block_selected, bg=PALETTE["danger"], fg="#ffffff", hover_bg="#b91c1c", border=PALETTE["danger"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
         HoverButton(actions, text="Desbloquear", command=self.unblock_selected, bg=PALETTE["warning"], fg="#ffffff", hover_bg="#d97706", border=PALETTE["warning"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT)
 
     def _selected_id(self):
@@ -168,6 +169,27 @@ class UsuariosView(ttk.Frame):
             return
         if messagebox.askyesno("Confirmar desbloqueo", f"¿Deseas desbloquear la cuenta de '{user.username}'?", parent=self):
             ok, msg = self.controller.desbloquear_usuario(user_id)
+            if ok:
+                self.load_users()
+            messagebox.showinfo("Usuarios", msg, parent=self)
+
+    def block_selected(self):
+        user_id = self._selected_id()
+        if not user_id:
+            messagebox.showinfo("Usuarios", "Selecciona un usuario primero.", parent=self)
+            return
+        if user_id == self.current_user.id_usuario:
+            messagebox.showerror("Operacion no permitida", "No puedes bloquear tu propia cuenta.", parent=self)
+            return
+        user = self.controller.obtener_usuario_por_id(user_id)
+        if not user:
+            messagebox.showerror("Usuarios", "No se pudo cargar el usuario seleccionado.", parent=self)
+            return
+        if user.bloqueado:
+            messagebox.showinfo("Usuarios", "El usuario ya se encuentra bloqueado.", parent=self)
+            return
+        if messagebox.askyesno("Confirmar bloqueo", f"¿Deseas bloquear la cuenta de '{user.username}'?", parent=self):
+            ok, msg = self.controller.bloquear_usuario(user_id)
             if ok:
                 self.load_users()
             messagebox.showinfo("Usuarios", msg, parent=self)

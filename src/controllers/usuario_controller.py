@@ -129,6 +129,20 @@ class UsuarioController:
                 logger.error(f"Error al desbloquear usuario {id_usuario}: {e}")
                 return False, f"No se pudo desbloquear el usuario: {e}"
 
+    def bloquear_usuario(self, id_usuario: int) -> tuple[bool, str]:
+        with get_session() as db:
+            try:
+                user = db.query(Usuario).filter(Usuario.id_usuario == id_usuario).first()
+                if not user:
+                    return False, "Usuario no encontrado."
+                user.bloqueado = True
+                db.commit()
+                return True, "Usuario bloqueado correctamente."
+            except Exception as e:
+                db.rollback()
+                logger.error(f"Error al bloquear usuario {id_usuario}: {e}")
+                return False, f"No se pudo bloquear el usuario: {e}"
+
     def crear_usuario(self, username: str, password: str, nombres: str, apellidos: str, id_rol: int, email: str = "", telefono: str = "") -> tuple[bool, str]:
         with get_session() as db:
             try:

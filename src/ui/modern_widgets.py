@@ -3,21 +3,21 @@ from tkinter import ttk
 
 
 PALETTE = {
-    "app_bg": "#eef2f7",
-    "surface": "#ffffff",
-    "surface_soft": "#f8fafc",
-    "surface_alt": "#f1f5f9",
-    "sidebar": "#0f172a",
-    "sidebar_soft": "#1e293b",
-    "text": "#0f172a",
-    "text_muted": "#64748b",
-    "border": "#dbe4ee",
-    "accent": "#2563eb",
-    "accent_hover": "#1d4ed8",
-    "success": "#16a34a",
+    "app_bg": "#0f172a",
+    "surface": "#1e293b",
+    "surface_soft": "#334155",
+    "surface_alt": "#475569",
+    "sidebar": "#020617",
+    "sidebar_soft": "#0f172a",
+    "text": "#f8fafc",
+    "text_muted": "#94a3b8",
+    "border": "#334155",
+    "accent": "#3b82f6",
+    "accent_hover": "#60a5fa",
+    "success": "#10b981",
     "warning": "#f59e0b",
-    "danger": "#dc2626",
-    "shadow": "#c7d2e0",
+    "danger": "#ef4444",
+    "shadow": "#000000",
 }
 
 
@@ -306,3 +306,50 @@ def animate_window_in(window, *, from_alpha=0.0, to_alpha=1.0, step=0.08, delay=
         window.after(delay, tick, alpha + step)
 
     window.after(delay, tick, from_alpha + step)
+
+class ToastNotification:
+    def __init__(self, master, message, duration=3000, bg="#10b981", fg="white"):
+        self.master = master
+        self.message = message
+        self.duration = duration
+        self.bg = bg
+        self.fg = fg
+        self.window = tk.Toplevel(master)
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.attributes("-alpha", 0.0)
+        self.window.configure(bg=self.bg)
+        
+        label = tk.Label(
+            self.window, text=self.message, bg=self.bg, fg=self.fg, 
+            font=("Segoe UI Semibold", 10), padx=15, pady=10
+        )
+        label.pack()
+        
+        self.window.update_idletasks()
+        w = self.window.winfo_width()
+        h = self.window.winfo_height()
+        sw = self.master.winfo_screenwidth()
+        sh = self.master.winfo_screenheight()
+        
+        # Position at bottom right
+        x = sw - w - 20
+        y = sh - h - 60
+        self.window.geometry(f"+{x}+{y}")
+        
+        self.fade_in()
+        self.window.after(self.duration, self.fade_out)
+
+    def fade_in(self, alpha=0.0):
+        if alpha < 1.0:
+            alpha += 0.1
+            self.window.attributes("-alpha", alpha)
+            self.window.after(20, self.fade_in, alpha)
+
+    def fade_out(self, alpha=1.0):
+        if alpha > 0.0:
+            alpha -= 0.1
+            self.window.attributes("-alpha", alpha)
+            self.window.after(20, self.fade_out, alpha)
+        else:
+            self.window.destroy()
