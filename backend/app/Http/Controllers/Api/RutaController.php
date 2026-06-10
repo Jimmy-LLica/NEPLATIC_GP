@@ -116,4 +116,67 @@ class RutaController
         ]));
         return $response->withHeader('Content-Type', 'application/json');
     }
+
+    public function notificar(Request $request, Response $response): Response
+    {
+        $usuario = $request->getAttribute('usuario');
+        $usuarioId = $usuario['id_usuario'];
+        
+        if ($usuario['rol_codigo'] !== 'NORMAL') {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'No autorizado']));
+            return $response->withStatus(403)->withHeader('Content-Type', 'application/json');
+        }
+        
+        $data = json_decode($request->getBody()->getContents(), true);
+        $idRuta = $data['id_ruta'] ?? null;
+        $idDeuda = $data['id_deuda'] ?? null;
+        $resultado = $data['resultado'] ?? null;
+        $observacion = $data['observacion'] ?? null;
+        
+        if (!$idRuta || !$idDeuda || !$resultado) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Datos incompletos']));
+            return $response->withStatus(400)->withHeader('Content-Type', 'application/json');
+        }
+        
+        $db = Database::getInstance();
+        $pdo = $db->getConnection();
+        
+        try {
+            $pdo->beginTransaction();
+            
+            // Registrar notificación
+            $stmt = $pdo->prepare("INSERT INTO neplatic.notificacion (id_deuda, id_usuario, resultado, observacion) VALUES (?, ?, ?, ?)");
+            $stmt->execute([$idDeuda, $usuarioId, $resultado, $observacion]);
+            
+            // Actualizar ruta
+            $stmt2 = $pdo->prepare("UPDATE neplatic.ruta_detalle SET fue_visitado = true, resultado_notificacion = ? WHERE id_ruta = ? AND id_deuda = ?");
+            $stmt2->execute([$resultado, $idRuta, $idDeuda]);
+            
+            $pdo->commit();
+            
+            // Event Driven Architecture (EDA) - Publicar en Redis
+            $redis = RedisService::getInstance();
+            $redis->publish('neplatic_events', json_encode([
+                'event_type' => 'visita_registrada',
+                'id_ruta' => $idRuta,
+                'id_deuda' => $idDeuda,
+                'id_usuario' => $usuarioId,
+                'timestamp' => date('Y-m-d H:i:s')
+            ]));
+            
+            // Invalidate cache
+            $fechaRuta = $pdo->query("SELECT fecha_ruta FROM neplatic.ruta_notificacion WHERE id_ruta = $idRuta")->fetchColumn();
+            if ($fechaRuta) {
+                $redis->delete("rutas_usuario_{$usuarioId}_{$fechaRuta}");
+            }
+            
+            $response->getBody()->write(json_encode(['success' => true, 'message' => 'Notificación registrada con éxito']));
+            return $response->withHeader('Content-Type', 'application/json');
+            
+        } catch (\Exception $e) {
+            $pdo->rollBack();
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'Error al registrar: ' . $e->getMessage()]));
+            return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
+        }
+    }
 }

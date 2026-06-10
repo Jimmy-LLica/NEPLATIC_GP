@@ -20,8 +20,11 @@ class Database
         
         try {
             $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
-            $this->connection = new PDO($dsn, $user, $pass);
-            $this->connection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $options = [
+                PDO::ATTR_PERSISTENT => true,
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+            ];
+            $this->connection = new PDO($dsn, $user, $pass, $options);
             $this->connection->exec("SET search_path TO $schema, public");
         } catch (PDOException $e) {
             throw new \Exception("Error de conexión PostgreSQL: " . $e->getMessage());

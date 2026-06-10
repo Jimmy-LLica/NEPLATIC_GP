@@ -25,9 +25,10 @@ return function ($app) {
         $group->get('/mapa/lotes', [Neplatic\Http\Controllers\Api\MapaController::class, 'getLotes']);
         $group->get('/mapa/heatmap', [Neplatic\Http\Controllers\Api\MapaController::class, 'getHeatmapData']);
         
-        // Rutas (solo lectura para notificadores)
+        // Rutas (solo lectura y notificaciones para notificadores)
         $group->get('/rutas/mis-rutas', [Neplatic\Http\Controllers\Api\RutaController::class, 'getMisRutas']);
         $group->get('/rutas/futuras', [Neplatic\Http\Controllers\Api\RutaController::class, 'getRutasFuturas']);
+        $group->post('/rutas/notificar', [Neplatic\Http\Controllers\Api\RutaController::class, 'notificar']);
         
     })->add(new AuthMiddleware());
 };

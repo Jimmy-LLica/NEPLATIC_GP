@@ -49,12 +49,47 @@
           <div v-if="deuda.fue_visitado" class="visitado-badge">
             ✅ {{ deuda.resultado_notificacion || 'Visitado' }}
           </div>
+          <button v-else class="btn-notificar" @click="abrirModalNotificar(deuda)">
+            Notificar Visita
+          </button>
         </div>
       </div>
     </div>
     
     <div v-else class="sin-ruta">
       <p>No tienes ruta asignada para la fecha seleccionada</p>
+    </div>
+
+    <!-- Modal Notificar Visita -->
+    <div v-if="mostrarModal" class="modal-overlay" @click.self="cerrarModal">
+      <div class="modal-content">
+        <h3>Registrar Visita</h3>
+        <p><strong>Contribuyente:</strong> {{ deudaSeleccionada?.nombres_contribuyente }} {{ deudaSeleccionada?.apellidos_contribuyente }}</p>
+        
+        <div class="form-group">
+          <label>Resultado de Notificación:</label>
+          <select v-model="formNotificacion.resultado" required>
+            <option value="">Seleccione un resultado</option>
+            <option value="NOTIFICADO_TITULAR">Notificado al Titular</option>
+            <option value="NOTIFICADO_TERCERO">Notificado a Tercero</option>
+            <option value="PUERTA_CERRADA">Puerta Cerrada (Bajo Puerta)</option>
+            <option value="RECHAZO_RECEPCION">Rechazo de Recepción</option>
+            <option value="DIRECCION_INCORRECTA">Dirección Incorrecta</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label>Observaciones:</label>
+          <textarea v-model="formNotificacion.observacion" rows="3" placeholder="Opcional..."></textarea>
+        </div>
+        
+        <div class="modal-actions">
+          <button class="btn-cancelar" @click="cerrarModal">Cancelar</button>
+          <button class="btn-guardar" @click="guardarNotificacion" :disabled="guardando">
+            {{ guardando ? 'Guardando...' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -73,6 +108,50 @@ const formatNumber = (num) => {
 
 const formatFecha = (fechaStr) => {
   return new Date(fechaStr).toLocaleDateString('es-PE')
+}
+
+const mostrarModal = ref(false)
+const guardando = ref(false)
+const deudaSeleccionada = ref(null)
+const formNotificacion = ref({
+  resultado: '',
+  observacion: ''
+})
+
+const abrirModalNotificar = (deuda) => {
+  deudaSeleccionada.value = deuda
+  formNotificacion.value = { resultado: '', observacion: '' }
+  mostrarModal.value = true
+}
+
+const cerrarModal = () => {
+  mostrarModal.value = false
+  deudaSeleccionada.value = null
+}
+
+const guardarNotificacion = async () => {
+  if (!formNotificacion.value.resultado) {
+    alert('Seleccione un resultado de notificación')
+    return
+  }
+  
+  guardando.value = true
+  try {
+    await api.post('/rutas/notificar', {
+      id_ruta: ruta.value.id_ruta,
+      id_deuda: deudaSeleccionada.value.id_deuda,
+      resultado: formNotificacion.value.resultado,
+      observacion: formNotificacion.value.observacion
+    })
+    alert('Notificación registrada exitosamente')
+    cerrarModal()
+    cargarRuta() // Recargar para ver los cambios
+  } catch (error) {
+    console.error('Error guardando notificación:', error)
+    alert('Hubo un error al guardar la notificación')
+  } finally {
+    guardando.value = false
+  }
 }
 
 const cargarRuta = async () => {
@@ -217,5 +296,90 @@ onMounted(() => {
 .loading {
   text-align: center;
   padding: 2rem;
+}
+.btn-notificar {
+  background: #2563eb;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-notificar:hover {
+  background: #1d4ed8;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 10px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+}
+.modal-content h3 {
+  margin-top: 0;
+  color: #1a472a;
+}
+.form-group {
+  margin-bottom: 1rem;
+  display: flex;
+  flex-direction: column;
+}
+.form-group label {
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+.form-group select, .form-group textarea {
+  padding: 0.5rem;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  font-family: inherit;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+.btn-cancelar {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.btn-cancelar:hover {
+  background: #e2e8f0;
+}
+.btn-guardar {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn-guardar:hover:not(:disabled) {
+  background: #059669;
+}
+.btn-guardar:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 </style>
