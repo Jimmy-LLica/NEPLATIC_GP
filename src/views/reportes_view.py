@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from src.controllers.reporte_controller import ReporteController
 from src.services.report_generator import ReportGenerator
-from src.ui.modern_widgets import PALETTE, HoverButton, style_treeview
+from src.ui.modern_widgets import PALETTE, HoverButton, ScrollableFrame, style_treeview
 
 
 class ReportesView(tk.Frame):
@@ -25,6 +25,14 @@ class ReportesView(tk.Frame):
 
         actions = tk.Frame(self, bg=PALETTE["app_bg"])
         actions.pack(fill=tk.X, padx=8, pady=(0, 10))
+        
+        # Búsqueda
+        tk.Label(actions, text="Buscar:", bg=PALETTE["app_bg"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(side=tk.LEFT, padx=(0, 4))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(actions, textvariable=self.search_var, style="Modern.TEntry", width=25)
+        search_entry.pack(side=tk.LEFT, padx=(0, 12))
+        search_entry.bind("<KeyRelease>", lambda _e: self._apply_search())
+        
         HoverButton(actions, text="Actualizar", command=self.refresh, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
         HoverButton(actions, text="Exportar Excel", command=self.export_excel, bg=PALETTE["accent"], hover_bg=PALETTE["accent_hover"], border=PALETTE["accent"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT, padx=(0, 8))
         HoverButton(actions, text="Exportar PDF", command=self.export_pdf, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 9), padx=12, pady=8).pack(side=tk.LEFT)
@@ -45,8 +53,9 @@ class ReportesView(tk.Frame):
         self.notebook.add(self.tab_top, text="Top deudores")
         self.notebook.add(self.tab_evolution, text="Evolucion")
 
-        self.dashboard_text = tk.Text(self.tab_dashboard, height=12, bg=PALETTE["surface_soft"], fg=PALETTE["text"], relief="flat", font=("Consolas", 10))
-        self.dashboard_text.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.dashboard_scroll = ScrollableFrame(self.tab_dashboard, bg=PALETTE["surface"])
+        self.dashboard_scroll.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        self.dashboard_content = self.dashboard_scroll.scrollable_frame
 
         self._build_tree(self.tab_sector, "sector")
         self._build_tree(self.tab_top, "top")
@@ -56,10 +65,15 @@ class ReportesView(tk.Frame):
         frame = tk.Frame(parent, bg=PALETTE["surface"])
         frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         tree = ttk.Treeview(frame, show="headings", style="Modern.Treeview")
+        
         vsb = ttk.Scrollbar(frame, orient="vertical", command=tree.yview, style="Modern.Vertical.TScrollbar")
-        tree.configure(yscrollcommand=vsb.set)
-        tree.pack(side="left", fill="both", expand=True)
+        hsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview, style="Modern.Horizontal.TScrollbar")
+        tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
         vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
+        tree.pack(side="left", fill="both", expand=True)
+        
         style_treeview(tree, ttk.Style())
         setattr(self, f"{kind}_tree", tree)
 
@@ -83,9 +97,23 @@ class ReportesView(tk.Frame):
             self.data = {"dashboard": {}, "top_deudores": [], "sector": [], "evolucion": []}
 
         self._render_summary()
-        self._render_tree(self.sector_tree, self._rows(self.data.get("sector")), ["codigo_sector", "nombre_sector", "total_deuda", "saldo_pendiente"])
-        self._render_tree(self.top_tree, self._rows(self.data.get("top_deudores")), None)
-        self._render_tree(self.evolution_tree, self._rows(self.data.get("evolucion")), None)
+        self._apply_search()
+
+    def _apply_search(self):
+        query = self.search_var.get().lower()
+        
+        def filter_rows(rows):
+            if not query:
+                return rows
+            filtered = []
+            for row in rows:
+                if any(query in str(v).lower() for v in row.values()):
+                    filtered.append(row)
+            return filtered
+
+        self._render_tree(self.sector_tree, filter_rows(self._rows(self.data.get("sector"))), ["codigo_sector", "nombre_sector", "total_deuda", "saldo_pendiente"])
+        self._render_tree(self.top_tree, filter_rows(self._rows(self.data.get("top_deudores"))), None)
+        self._render_tree(self.evolution_tree, filter_rows(self._rows(self.data.get("evolucion"))), None)
 
     def _render_summary(self):
         for widget in self.summary_frame.winfo_children():
@@ -106,11 +134,27 @@ class ReportesView(tk.Frame):
             card.pack(fill=tk.X)
             tk.Label(card, text="No hay resumen disponible en las vistas de base de datos.", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=14, pady=14)
 
-        self.dashboard_text.delete("1.0", "end")
-        self.dashboard_text.insert("end", "Resumen general\n")
-        self.dashboard_text.insert("end", "=" * 60 + "\n")
-        for key, value in dashboard.items():
-            self.dashboard_text.insert("end", f"{key}: {value}\n")
+        for widget in self.dashboard_content.winfo_children():
+            widget.destroy()
+
+        if dashboard:
+            row_frame = None
+            col_idx = 0
+            for i, (key, value) in enumerate(dashboard.items()):
+                if i % 3 == 0:
+                    row_frame = tk.Frame(self.dashboard_content, bg=PALETTE["surface"])
+                    row_frame.pack(fill=tk.X, pady=(0, 10))
+                    row_frame.columnconfigure((0, 1, 2), weight=1)
+                    col_idx = 0
+                
+                card = tk.Frame(row_frame, bg=PALETTE["app_bg"], highlightbackground=PALETTE["border"], highlightthickness=1)
+                card.grid(row=0, column=col_idx, sticky="nsew", padx=5)
+                
+                tk.Label(card, text=str(key).replace("_", " ").title(), bg=PALETTE["app_bg"], fg=PALETTE["text_muted"], font=("Segoe UI", 9)).pack(anchor="w", padx=14, pady=(12, 4))
+                tk.Label(card, text=str(value), bg=PALETTE["app_bg"], fg=PALETTE["text"], font=("Segoe UI Semibold", 16)).pack(anchor="w", padx=14, pady=(0, 12))
+                col_idx += 1
+        else:
+            tk.Label(self.dashboard_content, text="No hay detalles para mostrar.", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=14, pady=14)
 
     def _render_tree(self, tree, rows, explicit_columns):
         for item in tree.get_children():

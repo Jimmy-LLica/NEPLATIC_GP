@@ -13,7 +13,18 @@ class ReporteController:
         with get_session() as db:
             result = db.execute(text("SELECT * FROM neplatic.v_dashboard_gerencial")).first()
             if result:
-                return dict(result._mapping)
+                data = dict(result._mapping)
+                
+                # Recalcular efectividad real: (Total Contribuyentes - Morosos) / Total Contribuyentes * 100
+                res_contrib = db.execute(text("SELECT COUNT(*) as total FROM neplatic.contribuyente")).first()
+                res_morosos = db.execute(text("SELECT COUNT(DISTINCT id_contribuyente) as morosos FROM neplatic.deuda")).first()
+                
+                total = res_contrib.total if res_contrib and res_contrib.total > 0 else 1
+                morosos = res_morosos.morosos if res_morosos else 0
+                efectividad = ((total - morosos) / total) * 100
+                
+                data['tasa_efectividad_global'] = round(efectividad, 1)
+                return data
             return {}
 
     def morosidad_por_sector(self):

@@ -44,8 +44,8 @@ class LoginWindow:
     def __init__(self, master):
         self.master = master
         master.title("Neplatic | Inicio de sesion")
-        master.geometry("720x460")
-        master.minsize(640, 420)
+        master.geometry("720x520")
+        master.minsize(640, 480)
         master.configure(bg=PALETTE["app_bg"])
         master.resizable(True, True)
 
@@ -135,29 +135,31 @@ class LoginWindow:
         buttons = tk.Frame(inner, bg=PALETTE["surface"])
         buttons.pack(fill=tk.X, pady=(6, 0))
 
-        HoverButton(
+        btn_ingresar = HoverButton(
             buttons,
             text="Ingresar",
             command=self.login,
             bg=PALETTE["accent"],
             hover_bg=PALETTE["accent_hover"],
             border=PALETTE["accent"],
-            font=("Segoe UI Semibold", 10),
-            pady=11,
-        ).pack(fill=tk.X)
+            font=("Segoe UI Semibold", 11),
+            pady=14,
+        )
+        btn_ingresar.pack(fill=tk.X, ipady=2)
 
-        HoverButton(
+        btn_salir = HoverButton(
             buttons,
             text="Salir",
             command=self.master.destroy,
-            bg=PALETTE["surface_soft"],
-            fg=PALETTE["text"],
-            hover_bg=PALETTE["surface_alt"],
-            active_bg=PALETTE["surface_alt"],
-            border=PALETTE["border"],
-            font=("Segoe UI Semibold", 10),
-            pady=10,
-        ).pack(fill=tk.X, pady=(10, 0))
+            bg=PALETTE["danger"],
+            fg="#ffffff",
+            hover_bg="#b91c1c",
+            active_bg="#991b1b",
+            border=PALETTE["danger"],
+            font=("Segoe UI Semibold", 11),
+            pady=14,
+        )
+        btn_salir.pack(fill=tk.X, pady=(10, 0), ipady=2)
 
         tk.Label(
             inner,
@@ -291,6 +293,7 @@ class MainWindow:
         x = (self.master.winfo_screenwidth() // 2) - (width // 2)
         y = (self.master.winfo_screenheight() // 2) - (height // 2)
         self.master.geometry(f"+{x}+{y}")
+        self.master.state('zoomed')
 
     def _setup_styles(self):
         self.style = ttk.Style()
@@ -395,9 +398,7 @@ class MainWindow:
 
         if "rutas:visualizar_propias" in self.user_permissions:
             self._add_nav_button(nav, "rutas", "Mis rutas", lambda: self.show_view("rutas"))
-            self._add_nav_button(nav, "deudas", "Mis deudas", lambda: self.show_view("deudas"))
-        if "notificaciones:registrar" in self.user_permissions:
-            self._add_nav_button(nav, "notificar", "Notificar visita", lambda: self.show_view("notificar"))
+            self._add_nav_button(nav, "deudas", "Deudas", lambda: self.show_view("deudas"))
 
         if "usuarios:gestionar" in self.user_permissions:
             self._add_nav_button(nav, "usuarios", "Usuarios", lambda: self.show_view("usuarios"))
@@ -455,7 +456,6 @@ class MainWindow:
         permisos_vistas = {
             "rutas": "rutas:visualizar_propias",
             "deudas": "rutas:visualizar_propias",
-            "notificar": "notificaciones:registrar",
             "usuarios": "usuarios:gestionar",
             "etl": "etl:ejecutar",
             "reportes": "reportes:descargar",
@@ -492,7 +492,6 @@ class MainWindow:
                 "perfil": self._load_profile_view,
                 "rutas": self._load_rutas_view,
                 "deudas": self._load_deudas_view,
-                "notificar": self._load_notificar_view,
                 "usuarios": self._load_usuarios_view,
                 "etl": self._load_etl_view,
                 "reportes": self._load_reportes_view,
@@ -588,6 +587,12 @@ class MainWindow:
         last_access = self.user.ultimo_acceso.strftime("%d/%m/%Y %H:%M") if getattr(self.user, "ultimo_acceso", None) else datetime.now().strftime("%d/%m/%Y %H:%M")
         tk.Label(side_inner, text=f"Ultimo acceso: {last_access}", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 8)).pack(anchor="w", pady=(18, 0))
 
+        tk.Label(side_inner, text="Permisos activos:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(10, 0))
+        for p in self.user_permissions[:6]:  # Limit to avoid overflow
+            tk.Label(side_inner, text=f"• {p}", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 8)).pack(anchor="w")
+        if len(self.user_permissions) > 6:
+            tk.Label(side_inner, text=f"...y {len(self.user_permissions)-6} más.", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 8)).pack(anchor="w")
+
         stats = tk.Frame(container, bg=PALETTE["app_bg"])
         stats.pack(fill=tk.X, padx=24, pady=(0, 12))
         stats.columnconfigure((0, 1, 2, 3), weight=1)
@@ -595,9 +600,9 @@ class MainWindow:
         self._dashboard_stat_labels = []
         placeholders = [
             ("Rutas activas", "Cargando...", "Resumen de rutas asignadas", PALETTE["accent"]),
-            ("Deudas visibles", "Cargando...", "Elementos priorizados", PALETTE["success"]),
-            ("Permisos", str(len(self.user_permissions)), "Privilegios del rol", PALETTE["warning"]),
-            ("Top reportes", "Cargando...", "Datos listos para exportar", PALETTE["accent_hover"]),
+            ("Efectividad", "Cargando...", "Tasa de efectividad", PALETTE["success"]),
+            ("Deuda pendiente", "Cargando...", "Monto total por recaudar", PALETTE["warning"]),
+            ("Permisos", str(len(self.user_permissions)), "Privilegios activos del rol", PALETTE["accent_hover"]),
         ]
         for idx, (title, value, meta, accent) in enumerate(placeholders):
             card, val_lbl = self._stat_card(stats, title, value, meta, accent)
@@ -630,8 +635,8 @@ class MainWindow:
         
         def fetch_data():
             route_count = 0
-            debt_count = 0
-            top_count = 0
+            avance = "0.0%"
+            deuda_total = "S/ 0.00"
 
             try:
                 routes = self.ruta_controller.listar_rutas_usuario()
@@ -640,24 +645,20 @@ class MainWindow:
                 logger.error("Error cargando rutas del dashboard: %s", exc)
 
             try:
-                debt_rows = self.ruta_controller.listar_deudas_asignadas()
-                debt_count = len(debt_rows)
+                gerencial = self.report_controller.dashboard_gerencial()
+                efectividad = gerencial.get("tasa_efectividad_global", 0)
+                avance = f"{efectividad}%"
+                monto = gerencial.get("deuda_total_pendiente", 0)
+                deuda_total = f"S/ {monto:,.2f}"
             except Exception as exc:
-                logger.error("Error cargando deudas del dashboard: %s", exc)
-
-            try:
-                report_data = self.report_controller.exportable_dashboard()
-                top_count = len(report_data.get("top_deudores", []))
-            except Exception:
-                top_count = 0
+                logger.error("Error cargando KPIs del dashboard: %s", exc)
                 
             def update_ui():
-                if len(self._dashboard_stat_labels) >= 3:
+                if len(self._dashboard_stat_labels) >= 4:
                     self._dashboard_stat_labels[0].config(text=str(route_count))
-                    self._discord_stat_labels = getattr(self, '_dashboard_stat_labels', [])
-                    if len(self._discord_stat_labels) >= 3:
-                        self._discord_stat_labels[1].config(text=str(debt_count))
-                        self._discord_stat_labels[3].config(text=str(top_count))
+                    self._dashboard_stat_labels[1].config(text=avance)
+                    self._dashboard_stat_labels[2].config(text=deuda_total)
+                    self._dashboard_stat_labels[3].config(text=str(len(self.user_permissions)))
             
             self.master.after(0, update_ui)
 
@@ -705,17 +706,10 @@ class MainWindow:
         return container
 
     def _load_deudas_view(self):
+        from src.views.rutas_view import RutasView
         container = tk.Frame(self.content_host, bg=PALETTE["app_bg"])
         container.pack(fill=tk.BOTH, expand=True)
         view = RutasView(container, self.user, mode="deudas")
-        view.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        container.refresh = view.refresh
-        return container
-
-    def _load_notificar_view(self):
-        container = tk.Frame(self.content_host, bg=PALETTE["app_bg"])
-        container.pack(fill=tk.BOTH, expand=True)
-        view = RutasView(container, self.user, mode="notificar")
         view.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         container.refresh = view.refresh
         return container

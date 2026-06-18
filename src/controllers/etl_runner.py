@@ -15,8 +15,9 @@ def run_etl():
     oracle_pwd = os.getenv("ORACLE_PWD")
 
     if not all([oracle_dsn, oracle_user, oracle_pwd]):
-        logger.error("Variables ORACLE_DSN, ORACLE_USER y ORACLE_PWD requeridas")
-        return False
+        msg = "Variables ORACLE_DSN, ORACLE_USER y ORACLE_PWD requeridas"
+        logger.error(msg)
+        return False, msg
 
     extractor = OracleExtractor(oracle_dsn, oracle_user, oracle_pwd)
     loader = PostgresLoader()
@@ -27,11 +28,12 @@ def run_etl():
         deudas = extractor.extract_deudas()
         logger.info(f"{len(deudas)} deudas extraídas")
         loader.load_deudas(deudas, lote_etl="ETL_DIARIO")
-        logger.info("ETL completado exitosamente")
-        return True
+        msg = "ETL completado exitosamente"
+        logger.info(msg)
+        return True, msg
     except Exception as e:
         logger.error(f"Error en ETL: {e}")
-        return False
+        return False, str(e)
     finally:
         extractor.close()
         loader.close()

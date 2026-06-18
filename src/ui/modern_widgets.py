@@ -105,6 +105,8 @@ def configure_base_theme(style: ttk.Style) -> None:
         "Modern.TEntry",
         fieldbackground=PALETTE["surface"],
         background=PALETTE["surface"],
+        foreground=PALETTE["text"],
+        insertcolor=PALETTE["text"],
         bordercolor=PALETTE["border"],
         lightcolor=PALETTE["border"],
         darkcolor=PALETTE["border"],

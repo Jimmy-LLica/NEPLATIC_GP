@@ -8,8 +8,8 @@ from src.utils.config import db_settings
 
 engine = create_engine(
     db_settings.get_connection_url(),
-    pool_size=5,
-    max_overflow=10,
+    pool_size=20,
+    max_overflow=50,
     pool_recycle=1800,
     pool_pre_ping=True,
     pool_timeout=30,

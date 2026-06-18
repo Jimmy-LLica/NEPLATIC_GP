@@ -12,7 +12,7 @@ class UsuariosView(ttk.Frame):
         self.controller = UsuarioController()
         self.role_options = self.controller.listar_roles()
         self._build()
-        self.load_users()
+        self.refresh()
 
     def _build(self):
         header = tk.Frame(self, bg=PALETTE["app_bg"])
@@ -39,6 +39,15 @@ class UsuariosView(ttk.Frame):
 
         columns = ("id", "username", "nombre", "rol", "email", "activo", "bloqueado")
         self.tree = ttk.Treeview(table_card, columns=columns, show="headings", height=14, style="Modern.Treeview")
+        
+        # Add scrollbars
+        vsb = ttk.Scrollbar(table_card, orient="vertical", command=self.tree.yview, style="Modern.Vertical.TScrollbar")
+        hsb = ttk.Scrollbar(table_card, orient="horizontal", command=self.tree.xview, style="Modern.Horizontal.TScrollbar")
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        # Pack elements
+        vsb.pack(side="right", fill="y")
+        hsb.pack(side="bottom", fill="x")
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
         headings = {
@@ -83,14 +92,20 @@ class UsuariosView(ttk.Frame):
 
     def refresh(self):
         self.role_options = self.controller.listar_roles()
+        self.all_users = self.controller.listar_usuarios()
         self.load_users()
 
     def load_users(self):
         query = (self.search_var.get() or "").lower().strip()
         for item in self.tree.get_children():
             self.tree.delete(item)
-        rows = self.controller.listar_usuarios()
+        if not hasattr(self, "all_users"):
+            self.all_users = self.controller.listar_usuarios()
+        rows = self.all_users
+        count = 0
         for row in rows:
+            if count >= 500:
+                break
             text = f"{row['username']} {row['nombres']} {row['apellidos']} {row['rol_nombre']} {row.get('email') or ''}".lower()
             if query and query not in text:
                 continue
@@ -107,6 +122,7 @@ class UsuariosView(ttk.Frame):
                     "Sí" if row.get("bloqueado") else "No",
                 ),
             )
+            count += 1
 
     def create_user_dialog(self):
         self._user_dialog("Nuevo usuario")
@@ -141,7 +157,7 @@ class UsuariosView(ttk.Frame):
         if messagebox.askyesno("Confirmar cambio de estado", f"¿Deseas cambiar el estado de '{user.username}' a {nuevo_estado}?", parent=self):
             ok, msg = self.controller.cambiar_estado_usuario(user_id, not user.activo)
             if ok:
-                self.load_users()
+                self.refresh()
             messagebox.showinfo("Usuarios", msg, parent=self)
 
     def reset_password_selected(self):
@@ -170,7 +186,7 @@ class UsuariosView(ttk.Frame):
         if messagebox.askyesno("Confirmar desbloqueo", f"¿Deseas desbloquear la cuenta de '{user.username}'?", parent=self):
             ok, msg = self.controller.desbloquear_usuario(user_id)
             if ok:
-                self.load_users()
+                self.refresh()
             messagebox.showinfo("Usuarios", msg, parent=self)
 
     def block_selected(self):
@@ -191,7 +207,7 @@ class UsuariosView(ttk.Frame):
         if messagebox.askyesno("Confirmar bloqueo", f"¿Deseas bloquear la cuenta de '{user.username}'?", parent=self):
             ok, msg = self.controller.bloquear_usuario(user_id)
             if ok:
-                self.load_users()
+                self.refresh()
             messagebox.showinfo("Usuarios", msg, parent=self)
 
     def _reset_password_dialog(self, user):
@@ -263,7 +279,7 @@ class UsuariosView(ttk.Frame):
                 return
             ok, msg = self.controller.restablecer_contrasena(user.id_usuario, pwd)
             if ok:
-                self.load_users()
+                self.refresh()
                 dialog.destroy()
             messagebox.showinfo("Usuarios", msg, parent=dialog)
 
@@ -387,7 +403,7 @@ class UsuariosView(ttk.Frame):
                     telefono=telefono.get().strip(),
                 )
             if ok:
-                self.load_users()
+                self.refresh()
                 dialog.destroy()
             messagebox.showinfo("Usuarios", msg, parent=dialog)
 

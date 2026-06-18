@@ -44,7 +44,9 @@ class RutaController:
 
     def listar_deudas_asignadas(self):
         from src.models.contribuyente import Lote
+        from sqlalchemy import extract
         with get_session() as db:
+            current_year = datetime.now().year
             query = db.query(
                 RutaDetalle.id_deuda,
                 Lote.codigo.label("codigo_lote"),
@@ -57,10 +59,131 @@ class RutaController:
             ).join(
                 Lote, Deuda.id_lote == Lote.id_lote
             ).filter(
-                RutaNotificacion.id_usuario == self.user.id_usuario,
+                extract('year', Deuda.fecha_vencimiento) == current_year,
                 RutaNotificacion.estado_ruta != 'TERMINADA'
             )
+            
+            # Si es NOTIFICADOR (3), limitamos a sus rutas. Si es ADMIN (1) o SUPERVISOR (2), las ve todas.
+            if self.user.id_rol == 3:
+                query = query.filter(RutaNotificacion.id_usuario == self.user.id_usuario)
+
             return query.all()
+
+    def listar_deudas_anio_actual(self):
+        """Lista TODAS las deudas activas del año actual para la vista del administrador."""
+        from src.models.contribuyente import Lote, EstadoCobranza
+        from src.models.deuda import Deuda
+        from src.models.contribuyente import Sector, Manzana
+        from sqlalchemy import func as sa_func
+        with get_session() as db:
+            current_year = datetime.now().year
+
+            from sqlalchemy.orm import aliased
+            Contribuyente = aliased(self._get_contribuyente_model())
+
+            results = db.query(
+                Deuda.id_deuda,
+                Contribuyente.nombres.label("contribuyente"),
+                Contribuyente.numero_documento.label("documento"),
+                Lote.codigo.label("codigo_lote"),
+                Lote.direccion.label("direccion"),
+                Deuda.saldo_pendiente.label("saldo"),
+                Deuda.anio_tributo,
+                EstadoCobranza.nombre.label("estado_cobranza"),
+            ).join(
+                Contribuyente, Deuda.id_contribuyente == Contribuyente.id_contribuyente
+            ).outerjoin(
+                Lote, Deuda.id_lote == Lote.id_lote
+            ).join(
+                EstadoCobranza, Deuda.id_estado_cobranza == EstadoCobranza.id_estado
+            ).filter(
+                Deuda.activo == True,
+                Deuda.saldo_pendiente > 0,
+                Deuda.anio_tributo == current_year,
+            ).order_by(
+                Deuda.saldo_pendiente.desc()
+            ).limit(500).all()
+
+            return results
+
+    @staticmethod
+    def _get_contribuyente_model():
+        from sqlalchemy import Column, Integer, String, Boolean, Date, SmallInteger, ForeignKey
+        from sqlalchemy.orm import declarative_base
+        # Import directly from existing model
+        from src.models.database import Base as _B
+
+        class _Contribuyente(_B):
+            __tablename__ = "contribuyente"
+            __table_args__ = {"schema": "neplatic", "extend_existing": True}
+
+            id_contribuyente = Column(Integer, primary_key=True)
+            id_tipo_doc = Column(SmallInteger)
+            numero_documento = Column(String(15))
+            nombres = Column(String(150))
+            apellido_paterno = Column(String(50))
+            apellido_materno = Column(String(50))
+            razon_social = Column(String(200))
+            direccion_fiscal = Column(String(200))
+            clasificacion = Column(String(20))
+            activo = Column(Boolean, default=True)
+
+        return _Contribuyente
+
+    def obtener_sectores(self):
+        from src.models.contribuyente import Sector
+        with get_session() as db:
+            return db.query(Sector).filter(Sector.activo == True).order_by(Sector.nombre).all()
+
+    def obtener_notificadores(self):
+        from src.models.usuario import Usuario
+        with get_session() as db:
+            # ROL_NAMES = 3: Notificador
+            return db.query(Usuario).filter(
+                Usuario.activo == True,
+                Usuario.id_rol == 3
+            ).all()
+
+    def asignar_sector(self, id_usuario_notificador: int, id_sector: int) -> dict:
+        from src.models.deuda import RutaNotificacion, RutaDetalle, Deuda
+        from src.models.contribuyente import Lote, Manzana
+        with get_session() as db:
+            try:
+                # Buscar deudas sin pagar en el sector
+                query = db.query(Deuda).join(Lote, Deuda.id_lote == Lote.id_lote).join(Manzana, Lote.id_manzana == Manzana.id_manzana).filter(
+                    Manzana.id_sector == id_sector,
+                    Deuda.activo == True
+                )
+                deudas = query.all()
+                if not deudas:
+                    return {"success": False, "message": "No hay deudas pendientes en este sector."}
+                
+                ruta = RutaNotificacion(
+                    id_usuario=id_usuario_notificador,
+                    fecha_ruta=date.today(),
+                    estado_ruta='PLANIFICADA',
+                    total_deudas=len(deudas)
+                )
+                db.add(ruta)
+                db.flush()
+                
+                orden = 1
+                for deuda in deudas:
+                    detalle = RutaDetalle(
+                        id_ruta=ruta.id_ruta,
+                        id_deuda=deuda.id_deuda,
+                        orden_visita=orden,
+                        visitado=False
+                    )
+                    db.add(detalle)
+                    orden += 1
+                
+                db.commit()
+                return {"success": True, "message": f"Ruta asignada exitosamente con {len(deudas)} deudas."}
+            except Exception as e:
+                db.rollback()
+                logger.error("Error al asignar sector: %s", e)
+                return {"success": False, "message": f"Error: {e}"}
 
     def registrar_notificacion(self, id_deuda: int, direccion: str, persona: str, parentesco: str, id_estado: int) -> dict:
         with get_session() as db:

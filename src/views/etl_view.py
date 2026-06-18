@@ -75,12 +75,12 @@ class EtlView(tk.Frame):
         self._log("Iniciando ETL...")
         self.status_label.config(text="Ejecutando...")
         self.update_idletasks()
-        ok = run_etl()
+        ok, msg = run_etl()
         if ok:
             self._log("ETL completado correctamente.")
             self.status_label.config(text="Proceso completado correctamente.")
             messagebox.showinfo("ETL", "Proceso completado correctamente.", parent=self)
         else:
-            self._log("ETL termino con errores. Revisar logs.")
+            self._log(f"ETL termino con errores. Detalle: {msg}")
             self.status_label.config(text="El proceso termino con errores.")
-            messagebox.showerror("ETL", "No fue posible completar el proceso ETL.", parent=self)
+            messagebox.showerror("ETL", f"No fue posible completar el proceso ETL.\n\nCausa: {msg}", parent=self)
