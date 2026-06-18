@@ -164,19 +164,14 @@ class MapaController
         
         $sql = "SELECT 
                     l.id_lote,
-                    l.codigo_lote,
                     l.latitud,
                     l.longitud,
                     l.monto_total_pendiente as intensidad,
-                    l.monto_coactiva,
-                    l.monto_ordinaria,
-                    l.estado_predominante,
-                    l.color_predominante
+                    l.estado_predominante
                 FROM neplatic.mv_calor_lote l
                 WHERE l.latitud IS NOT NULL AND l.longitud IS NOT NULL
                 AND l.monto_total_pendiente > 0
-                ORDER BY l.monto_total_pendiente DESC
-                LIMIT 5000";
+                LIMIT 15000";
         
         $puntos = $db->fetchAll($sql);
         

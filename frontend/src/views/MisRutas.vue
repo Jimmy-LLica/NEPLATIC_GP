@@ -2,12 +2,17 @@
   <div class="rutas-container">
     <h1>Mis Rutas de Notificación</h1>
     
-    <div class="fecha-selector">
-      <label>Fecha:</label>
-      <input type="date" v-model="fecha" @change="cargarRuta" />
+    <div class="header-controls">
+      <div class="fecha-selector">
+        <label>Fecha:</label>
+        <input type="date" v-model="fecha" @change="cargarRuta" />
+      </div>
+      <div class="sync-info" v-if="ultimaSincronizacion">
+        <span class="dot connected"></span> Sincronizado: {{ ultimaSincronizacion }}
+      </div>
     </div>
     
-    <div v-if="loading" class="loading">Cargando...</div>
+    <div v-if="loading" class="loading">Cargando datos de ruta...</div>
     
     <div v-else-if="ruta && ruta.estado_ruta !== 'SIN_RUTA'" class="ruta-card">
       <div class="ruta-header">
@@ -40,7 +45,10 @@
           <div class="deuda-orden">{{ deuda.orden }}</div>
           <div class="deuda-info">
             <div class="contribuyente">{{ deuda.nombres_contribuyente }} {{ deuda.apellidos_contribuyente }}</div>
-            <div class="direccion">{{ deuda.direccion }}</div>
+            <div class="direccion">📍 {{ deuda.direccion }}</div>
+            <div class="detalles-extra">
+              <span class="doc">DNI/RUC: {{ deuda.numero_documento || 'No disp.' }}</span>
+            </div>
             <div class="monto">Monto: S/ {{ formatNumber(deuda.monto_pendiente) }}</div>
           </div>
           <div :class="['estado-badge', deuda.estado_cobranza.toLowerCase()]">
@@ -57,7 +65,10 @@
     </div>
     
     <div v-else class="sin-ruta">
-      <p>No tienes ruta asignada para la fecha seleccionada</p>
+      <div class="icon-empty">📭</div>
+      <h3>No tienes ruta asignada para esta fecha</h3>
+      <p>Las rutas de notificación son generadas y asignadas desde la <b>Aplicación de Escritorio</b> del sistema NEPLATIC.</p>
+      <p class="text-muted">Si crees que esto es un error, por favor comunícate con el administrador del sistema. La información se sincroniza en tiempo real automáticamente.</p>
     </div>
 
     <!-- Modal Notificar Visita -->
@@ -101,6 +112,7 @@ import api from '../api'
 const loading = ref(false)
 const ruta = ref(null)
 const fecha = ref(new Date().toISOString().split('T')[0])
+const ultimaSincronizacion = ref('')
 
 const formatNumber = (num) => {
   return num?.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'
@@ -159,6 +171,7 @@ const cargarRuta = async () => {
   try {
     const response = await api.get(`/rutas/mis-rutas?fecha=${fecha.value}`)
     ruta.value = response.data.data
+    ultimaSincronizacion.value = new Date().toLocaleTimeString('es-PE')
   } catch (error) {
     console.error('Error cargando ruta:', error)
   } finally {
@@ -166,8 +179,43 @@ const cargarRuta = async () => {
   }
 }
 
+let geoWatchId = null;
+
+const iniciarGeolocalizacion = () => {
+  if (navigator.geolocation) {
+    geoWatchId = navigator.geolocation.watchPosition(
+      async (position) => {
+        try {
+          await api.post('/rutas/ubicacion', {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          });
+        } catch (error) {
+          console.error('Error enviando ubicación:', error);
+        }
+      },
+      (error) => {
+        console.error('Error obteniendo ubicación:', error);
+        alert('Por favor active su ubicación para continuar trabajando.');
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+    );
+  } else {
+    alert('Su navegador no soporta geolocalización.');
+  }
+}
+
 onMounted(() => {
   cargarRuta()
+  iniciarGeolocalizacion()
+})
+
+import { onBeforeUnmount } from 'vue'
+
+onBeforeUnmount(() => {
+  if (geoWatchId !== null && navigator.geolocation) {
+    navigator.geolocation.clearWatch(geoWatchId);
+  }
 })
 </script>
 
@@ -176,11 +224,33 @@ onMounted(() => {
   margin-bottom: 1.5rem;
   color: #1a472a;
 }
-.fecha-selector {
+.header-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+.fecha-selector {
   display: flex;
   align-items: center;
   gap: 1rem;
+}
+.sync-info {
+  font-size: 0.85rem;
+  color: #666;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.dot.connected {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: #10b981;
+  border-radius: 50%;
+  box-shadow: 0 0 5px #10b981;
 }
 .fecha-selector label {
   font-weight: bold;
@@ -262,11 +332,18 @@ onMounted(() => {
   color: #333;
 }
 .direccion {
-  font-size: 0.8rem;
-  color: #666;
+  font-size: 0.85rem;
+  color: #555;
+  margin-top: 0.2rem;
+}
+.detalles-extra {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.2rem;
+  margin-bottom: 0.2rem;
 }
 .monto {
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   color: #1a472a;
   font-weight: bold;
 }
@@ -288,10 +365,21 @@ onMounted(() => {
 }
 .sin-ruta {
   text-align: center;
-  padding: 3rem;
+  padding: 4rem 2rem;
   background: white;
   border-radius: 10px;
-  color: #666;
+  color: #333;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+}
+.icon-empty {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+.text-muted {
+  color: #888;
+  font-size: 0.9rem;
+  max-width: 600px;
+  margin: 0 auto;
 }
 .loading {
   text-align: center;

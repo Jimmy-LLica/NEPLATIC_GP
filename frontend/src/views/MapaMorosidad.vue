@@ -18,10 +18,48 @@
         </div>
         <div v-if="rutaError" class="error-msg">{{ rutaError }}</div>
       </div>
+      <div class="legend-box">
+        <h3>Leyenda</h3>
+        <div class="legend-item"><span class="color-dot" style="background:rgba(255,0,0,0.8)"></span> Deuda Coactiva</div>
+        <div class="legend-item"><span class="color-dot" style="background:rgba(128,0,32,0.8)"></span> Deuda Ordinaria</div>
+        <div class="legend-item"><span class="color-dot" style="background:rgba(0,0,255,0.8)"></span> Sin Proceso</div>
+        <div class="legend-item"><span class="color-dot" style="background:#00FF00"></span> Origen Ruta</div>
+        <div class="legend-item"><span class="color-dot" style="background:#FF0000; border-radius:0;"></span> Destino Ruta</div>
+        <div class="legend-item"><span class="color-line"></span> Ruta Óptima</div>
+      </div>
     </div>
 
     <div v-if="cargando" class="loading">Cargando motor geográfico...</div>
     <div ref="mapContainer" class="map" :class="{ 'cursor-crosshair': modoSeleccion }"></div>
+
+    <!-- Modal Notificación -->
+    <div v-if="showModal" class="modal-backdrop">
+      <div class="modal-content">
+        <h2>Registrar Notificación</h2>
+        <p><b>Lote:</b> {{ selectedLote?.ObjectID }}</p>
+        <p><b>Estado Actual:</b> {{ selectedLote?.estado }}</p>
+        <div class="form-group">
+          <label>Resultado de visita:</label>
+          <select v-model="formNotificacion.estado">
+            <option value="1">Notificado</option>
+            <option value="2">Ausente</option>
+            <option value="3">Se mudó</option>
+            <option value="4">Fallecido</option>
+            <option value="5">Dirección incorrecta</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Observaciones:</label>
+          <textarea v-model="formNotificacion.observaciones" rows="3"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button @click="guardarNotificacion" class="btn" :disabled="guardando">
+            {{ guardando ? 'Guardando...' : 'Guardar' }}
+          </button>
+          <button @click="showModal = false" class="btn btn-secondary" :disabled="guardando">Cancelar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -42,7 +80,16 @@ export default {
       destino: null,
       origenLatLng: '',
       destinoLatLng: '',
-      rutaError: ''
+      rutaError: '',
+      
+      // Notificacion state
+      showModal: false,
+      selectedLote: null,
+      guardando: false,
+      formNotificacion: {
+        estado: '1',
+        observaciones: ''
+      }
     }
   },
   created() {
@@ -108,6 +155,16 @@ export default {
         
         // Convertir datos REST a Graphics de ArcGIS
         const graphics = this.puntosCalor.map(punto => {
+          const estado = punto.estado_predominante || punto.estado || "";
+          
+          // Asignar un "peso térmico" para que el color represente el estado en el mapa de calor
+          let pesoTermico = 10; // Azul (base baja)
+          if (estado.includes("Coactiva")) {
+            pesoTermico = 100; // Rojo (tope máximo)
+          } else if (estado.includes("Ordinaria")) {
+            pesoTermico = 60;  // Guinda (rango medio alto, para que no salte a rojo tan fácilmente)
+          }
+
           return new Graphic({
             geometry: {
               type: "point",
@@ -116,56 +173,96 @@ export default {
             },
             attributes: {
               ObjectID: punto.id_lote,
-              intensidad: parseFloat(punto.intensidad),
-              estado: punto.estado_predominante
+              pesoTermico: pesoTermico,
+              estado: estado,
+              deuda_real: parseFloat(punto.intensidad)
             }
           });
         });
 
-        // Configurar el HeatmapRenderer
-        const heatmapRenderer = {
+        // Separar graphics por estado
+        const gCoactiva = graphics.filter(g => g.attributes.estado === "Cobranza Coactiva" || g.attributes.estado === "Coactiva");
+        const gOrdinaria = graphics.filter(g => g.attributes.estado === "Cobranza Ordinaria" || g.attributes.estado === "Ordinaria");
+        const gSinProceso = graphics.filter(g => g.attributes.estado === "Sin proceso" || g.attributes.estado === "Sin Proceso");
+
+        const blurRadius = 20; // Difuminado amplio para mezclar suavemente
+        const maxPixelIntensity = 30; // Un valor moderado para crear nubes difusas, no sólidos duros
+        const minPixelIntensity = 0;
+
+        // Renderizadores independientes: cada estado tiene SOLO su color
+        const renderCoactiva = {
           type: "heatmap",
-          field: "intensidad",
           colorStops: [
-            { color: "rgba(63, 40, 102, 0)", ratio: 0 },
-            { color: "#472b77", ratio: 0.083 },
-            { color: "#4e2d87", ratio: 0.166 },
-            { color: "#563098", ratio: 0.25 },
-            { color: "#5d32a8", ratio: 0.333 },
-            { color: "#6735be", ratio: 0.416 },
-            { color: "#7139d4", ratio: 0.5 },
-            { color: "#7b3ce9", ratio: 0.583 },
-            { color: "#853fff", ratio: 0.666 },
-            { color: "#a46fbf", ratio: 0.75 },
-            { color: "#c29f80", ratio: 0.833 },
-            { color: "#e0cf40", ratio: 0.916 },
-            { color: "#ffff00", ratio: 1 }
+            { ratio: 0, color: "rgba(220, 0, 0, 0)" },
+            { ratio: 0.5, color: "rgba(220, 0, 0, 0.7)" },
+            { ratio: 1, color: "rgba(220, 0, 0, 1)" }
           ],
-          minPixelIntensity: 0,
-          maxPixelIntensity: 10000 // Ajustar según los valores reales de deuda
+          blurRadius, maxPixelIntensity, minPixelIntensity
         };
 
-        const heatmapLayer = new FeatureLayer({
-          source: graphics,
+        const renderOrdinaria = {
+          type: "heatmap",
+          colorStops: [
+            { ratio: 0, color: "rgba(90, 0, 20, 0)" }, // Guinda más oscuro y profundo
+            { ratio: 0.5, color: "rgba(90, 0, 20, 0.7)" },
+            { ratio: 1, color: "rgba(90, 0, 20, 1)" }
+          ],
+          blurRadius, maxPixelIntensity, minPixelIntensity
+        };
+
+        const renderSinProceso = {
+          type: "heatmap",
+          colorStops: [
+            { ratio: 0, color: "rgba(0, 0, 255, 0)" },
+            { ratio: 0.5, color: "rgba(0, 0, 255, 0.7)" },
+            { ratio: 1, color: "rgba(0, 0, 255, 1)" }
+          ],
+          blurRadius, maxPixelIntensity, minPixelIntensity
+        };
+
+        const popupTemplate = {
+          title: "Lote: {ObjectID}",
+          content: "<b>Estado:</b> {estado}<br><b>Deuda Pendiente:</b> S/ {deuda_real}",
+          actions: [{
+            title: "Registrar Notificación",
+            id: "registrar-notificacion",
+            className: "esri-icon-edit"
+          }]
+        };
+
+        // blendMode: "screen" es el correcto para fondos oscuros. 
+        // Suma la luz de los colores en vez de oscurecerlos, evitando el color negro y creando un brillo estilo neón o fuego al mezclarse.
+        const layerSinProceso = new FeatureLayer({
+          source: gSinProceso,
           objectIdField: "ObjectID",
-          fields: [{
-            name: "ObjectID",
-            alias: "ObjectID",
-            type: "oid"
-          }, {
-            name: "intensidad",
-            alias: "Deuda Pendiente",
-            type: "double"
-          }, {
-            name: "estado",
-            alias: "Estado",
-            type: "string"
-          }],
-          renderer: heatmapRenderer,
-          title: "Heatmap de Morosidad"
+          fields: [{ name: "ObjectID", type: "oid" }, { name: "estado", type: "string" }, { name: "deuda_real", type: "double" }],
+          renderer: renderSinProceso,
+          title: "Sin Proceso",
+          popupTemplate,
+          blendMode: "normal"
         });
 
-        map.addMany([heatmapLayer, this.routeLayer, this.markersLayer]);
+        const layerOrdinaria = new FeatureLayer({
+          source: gOrdinaria,
+          objectIdField: "ObjectID",
+          fields: [{ name: "ObjectID", type: "oid" }, { name: "estado", type: "string" }, { name: "deuda_real", type: "double" }],
+          renderer: renderOrdinaria,
+          title: "Deuda Ordinaria",
+          popupTemplate,
+          blendMode: "normal"
+        });
+
+        const layerCoactiva = new FeatureLayer({
+          source: gCoactiva,
+          objectIdField: "ObjectID",
+          fields: [{ name: "ObjectID", type: "oid" }, { name: "estado", type: "string" }, { name: "deuda_real", type: "double" }],
+          renderer: renderCoactiva,
+          title: "Deuda Coactiva",
+          popupTemplate,
+          blendMode: "normal"
+        });
+
+        map.addMany([layerSinProceso, layerOrdinaria, layerCoactiva, this.routeLayer, this.markersLayer]);
 
         // Configurar el click para capturar Origen y Destino de rutas
         this.view.on("click", (event) => {
@@ -186,6 +283,16 @@ export default {
             this.origen = { lat, lng: lon };
             this.origenLatLng = `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
             this.dibujarMarcador(lon, lat, [0, 255, 0], "Origen");
+          }
+        });
+
+        this.view.popup.on("trigger-action", (event) => {
+          if (event.action.id === "registrar-notificacion") {
+            const attributes = this.view.popup.selectedFeature.attributes;
+            this.selectedLote = attributes;
+            this.formNotificacion.estado = '1';
+            this.formNotificacion.observaciones = '';
+            this.showModal = true;
           }
         });
 
@@ -227,7 +334,7 @@ export default {
       const request = {
         origin: this.origen,
         destination: this.destino,
-        travelMode: 'DRIVING'
+        travelMode: 'DRIVING' // DRIVING evita desvíos irregulares de zonas peatonales no mapeadas correctamente
       };
 
       this.directionsService.route(request, (response, status) => {
@@ -270,6 +377,25 @@ export default {
       this.rutaError = '';
       if (this.routeLayer) this.routeLayer.removeAll();
       if (this.markersLayer) this.markersLayer.removeAll();
+    },
+    async guardarNotificacion() {
+      if (!this.selectedLote) return;
+      this.guardando = true;
+      try {
+        const payload = {
+          id_lote: this.selectedLote.ObjectID,
+          id_estado_notif: parseInt(this.formNotificacion.estado),
+          observaciones: this.formNotificacion.observaciones
+        };
+        await api.post('/notificaciones/registrar', payload);
+        alert('Notificación registrada correctamente');
+        this.showModal = false;
+      } catch (err) {
+        console.error('Error guardando notificación', err);
+        alert('Error guardando notificación');
+      } finally {
+        this.guardando = false;
+      }
     }
   }
 }
@@ -318,6 +444,76 @@ export default {
 .btn:disabled { background: #ccc; cursor: not-allowed; }
 .btn-secondary { background: #6c757d; }
 .error-msg { color: #dc3545; font-size: 0.85rem; margin-top: 0.5rem; font-weight: bold; }
+
+/* Modal styles */
+.modal-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: white;
+  padding: 2rem;
+  border-radius: 8px;
+  width: 400px;
+  max-width: 90%;
+}
+.modal-content h2 {
+  margin-top: 0;
+}
+.form-group {
+  margin-bottom: 1rem;
+}
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+.form-group select, .form-group textarea {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.legend-box {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  min-width: 200px;
+}
+.legend-box h3 { margin-top: 0; margin-bottom: 0.5rem; color: #333; font-size: 1rem; }
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+}
+.color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.2);
+}
+.color-line {
+  display: inline-block;
+  width: 16px;
+  height: 4px;
+  background: #00c8ff;
+}
 
 .map {
   width: 100%;

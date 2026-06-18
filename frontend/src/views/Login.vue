@@ -13,7 +13,8 @@
           <input type="password" id="password" v-model="password" required />
         </div>
         <button type="submit" :disabled="loading">
-          {{ loading ? 'Iniciando sesión...' : 'Ingresar' }}
+          <span v-if="loading" class="spinner"></span>
+          {{ loading ? 'Ingresando...' : 'Ingresar' }}
         </button>
         <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
       </form>
@@ -52,7 +53,13 @@ export default {
         }
       } catch (error) {
         console.error(error)
-        this.errorMessage = error.response?.data?.error || 'Error de conexión o credenciales incorrectas'
+        if (!error.response) {
+          this.errorMessage = 'Error de conexión. Verifica que el servidor esté activo.'
+        } else if (error.response.status === 401 || error.response.status === 403) {
+          this.errorMessage = 'Usuario o contraseña incorrectos, o cuenta inactiva.'
+        } else {
+          this.errorMessage = error.response?.data?.error || 'Ocurrió un error inesperado al iniciar sesión.'
+        }
       } finally {
         this.loading = false
       }
@@ -130,5 +137,22 @@ button:disabled {
   margin-top: 1rem;
   color: #d32f2f;
   font-size: 0.875rem;
+  background: #fde7e9;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  border-top-color: white;
+  animation: spin 1s ease-in-out infinite;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

@@ -5,7 +5,7 @@ services:
     build: .
     container_name: neplatic-web
     ports:
-      - "8080:80"
+      - "8085:80"
     environment:
       - DB_HOST=178.238.228.92
       - DB_PORT=5432

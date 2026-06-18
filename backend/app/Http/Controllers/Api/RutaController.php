@@ -179,4 +179,59 @@ class RutaController
             return $response->withStatus(500)->withHeader('Content-Type', 'application/json');
         }
     }
+
+    public function guardarUbicacion(Request $request, Response $response): Response
+    {
+        $usuario = $request->getAttribute('usuario');
+        $usuarioId = $usuario['id_usuario'];
+        
+        $data = json_decode($request->getBody()->getContents(), true);
+        $lat = $data['lat'] ?? null;
+        $lng = $data['lng'] ?? null;
+        
+        if ($lat && $lng) {
+            $redis = RedisService::getInstance();
+            // Guardamos la ubicación con un TTL de 5 minutos
+            $redis->set("ubicacion_usuario_{$usuarioId}", json_encode([
+                'lat' => $lat,
+                'lng' => $lng,
+                'nombres' => $usuario['nombres'] ?? 'Notificador',
+                'apellidos' => $usuario['apellidos'] ?? '',
+                'timestamp' => time()
+            ]), 300);
+        }
+        
+        $response->getBody()->write(json_encode(['success' => true]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
+
+    public function getUbicaciones(Request $request, Response $response): Response
+    {
+        $usuario = $request->getAttribute('usuario');
+        
+        // Solo ADMIN o SUPERVISOR
+        if (!in_array($usuario['rol_codigo'], ['ADMIN', 'SUPERVISOR'])) {
+            $response->getBody()->write(json_encode(['success' => false, 'error' => 'No autorizado']));
+            return $response->withStatus(403)->withHeader('Content-Type', 'application/json');
+        }
+        
+        $redis = RedisService::getInstance();
+        // Usamos pattern matching si el cliente redis lo soporta, o mantenemos un set. 
+        // Para simplificar, asumimos que sabemos los IDs o leemos todas las keys.
+        // Dado que phpredis tiene keys():
+        $keys = $redis->keys('ubicacion_usuario_*');
+        $ubicaciones = [];
+        
+        foreach ($keys as $key) {
+            // Redis puede retornar claves con prefijo, limpiar si es necesario
+            $key = str_replace(getenv('REDIS_PREFIX') ?? '', '', $key);
+            $data = $redis->get($key);
+            if ($data) {
+                $ubicaciones[] = json_decode($data, true);
+            }
+        }
+        
+        $response->getBody()->write(json_encode(['success' => true, 'data' => $ubicaciones]));
+        return $response->withHeader('Content-Type', 'application/json');
+    }
 }

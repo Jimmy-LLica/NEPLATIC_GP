@@ -6,9 +6,10 @@
         <span>Sistema Georeferencial de Morosidad</span>
       </div>
       <div class="nav-links">
-        <router-link to="/dashboard">Dashboard</router-link>
-        <router-link to="/mapa">Mapa de Calor</router-link>
-        <router-link to="/mis-rutas">Mis Rutas</router-link>
+        <router-link v-if="usuario.rol !== 'NORMAL'" to="/dashboard">Dashboard</router-link>
+        <router-link v-if="usuario.rol !== 'NORMAL'" to="/mapa">Mapa de Calor</router-link>
+        <router-link v-if="usuario.rol === 'ADMIN'" to="/monitoreo">Monitoreo</router-link>
+        <router-link v-if="usuario.rol === 'NORMAL'" to="/mis-rutas">Mis Rutas</router-link>
       </div>
       <div class="nav-user">
         <span>{{ usuario.nombres }} {{ usuario.apellidos }}</span>

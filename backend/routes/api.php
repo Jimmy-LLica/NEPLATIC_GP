@@ -29,6 +29,11 @@ return function ($app) {
         $group->get('/rutas/mis-rutas', [Neplatic\Http\Controllers\Api\RutaController::class, 'getMisRutas']);
         $group->get('/rutas/futuras', [Neplatic\Http\Controllers\Api\RutaController::class, 'getRutasFuturas']);
         $group->post('/rutas/notificar', [Neplatic\Http\Controllers\Api\RutaController::class, 'notificar']);
+        $group->post('/rutas/ubicacion', [Neplatic\Http\Controllers\Api\RutaController::class, 'guardarUbicacion']);
+        $group->get('/rutas/ubicaciones-activas', [Neplatic\Http\Controllers\Api\RutaController::class, 'getUbicaciones']);
+        
+        // Notificaciones (Web)
+        $group->post('/notificaciones/registrar', [Neplatic\Http\Controllers\Api\NotificacionController::class, 'registrar']);
         
     })->add(new AuthMiddleware());
 };
