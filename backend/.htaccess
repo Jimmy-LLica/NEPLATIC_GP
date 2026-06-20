@@ -1,7 +1,13 @@
 RewriteEngine On
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} ^/api [NC]
 RewriteRule ^ index.php [QSA,L]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api [NC]
+RewriteRule ^ index.html [QSA,L]
 
 # Headers CORS
 Header set Access-Control-Allow-Origin "*"

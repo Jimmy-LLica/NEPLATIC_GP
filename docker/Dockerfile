@@ -10,10 +10,9 @@ RUN apt-get update && apt-get install -y \
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 COPY ../backend /var/www/html/
-COPY ../frontend/dist /var/www/html/public/
+COPY ../frontend/dist /var/www/html/
 
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
-RUN chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
+RUN chown -R www-data:www-data /var/www/html
 
 RUN a2enmod rewrite headers
 
