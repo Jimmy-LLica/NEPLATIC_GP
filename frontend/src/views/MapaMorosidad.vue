@@ -19,10 +19,36 @@
         <div v-if="rutaError" class="error-msg">{{ rutaError }}</div>
       </div>
       <div class="legend-box">
-        <h3>Leyenda</h3>
-        <div class="legend-item"><span class="color-dot" style="background:rgba(255,0,0,0.8)"></span> Deuda Coactiva</div>
-        <div class="legend-item"><span class="color-dot" style="background:rgba(128,0,32,0.8)"></span> Deuda Ordinaria</div>
-        <div class="legend-item"><span class="color-dot" style="background:rgba(0,0,255,0.8)"></span> Sin Proceso</div>
+        <h3>Leyenda y Filtros</h3>
+        <div class="filter-hint">Haz clic para mostrar/ocultar capas</div>
+        <div
+          class="legend-item filter-btn"
+          :class="{ active: filtros.coactiva, inactive: !filtros.coactiva }"
+          @click="toggleFiltro('coactiva')"
+        >
+          <span class="color-dot" style="background:rgba(220,0,0,0.85)"></span>
+          Deuda Coactiva
+          <span class="filter-icon">{{ filtros.coactiva ? '👁' : '🚫' }}</span>
+        </div>
+        <div
+          class="legend-item filter-btn"
+          :class="{ active: filtros.ordinaria, inactive: !filtros.ordinaria }"
+          @click="toggleFiltro('ordinaria')"
+        >
+          <span class="color-dot" style="background:rgba(90,0,20,0.85)"></span>
+          Deuda Ordinaria
+          <span class="filter-icon">{{ filtros.ordinaria ? '👁' : '🚫' }}</span>
+        </div>
+        <div
+          class="legend-item filter-btn"
+          :class="{ active: filtros.sinProceso, inactive: !filtros.sinProceso }"
+          @click="toggleFiltro('sinProceso')"
+        >
+          <span class="color-dot" style="background:rgba(0,0,220,0.85)"></span>
+          Sin Proceso
+          <span class="filter-icon">{{ filtros.sinProceso ? '👁' : '🚫' }}</span>
+        </div>
+        <hr style="margin: 0.5rem 0; border: none; border-top: 1px solid #eee;">
         <div class="legend-item"><span class="color-dot" style="background:#00FF00"></span> Origen Ruta</div>
         <div class="legend-item"><span class="color-dot" style="background:#FF0000; border-radius:0;"></span> Destino Ruta</div>
         <div class="legend-item"><span class="color-line"></span> Ruta Óptima</div>
@@ -89,6 +115,13 @@ export default {
       formNotificacion: {
         estado: '1',
         observaciones: ''
+      },
+
+      // Filtros de capas
+      filtros: {
+        coactiva: true,
+        ordinaria: true,
+        sinProceso: true
       }
     }
   },
@@ -97,15 +130,19 @@ export default {
     this.routeLayer = null;
     this.markersLayer = null;
     this.directionsService = null;
+    // Referencias a las capas ArcGIS para poder ocultarlas/mostrarlas
+    this._layerCoactiva = null;
+    this._layerOrdinaria = null;
+    this._layerSinProceso = null;
   },
   async mounted() {
-    // Inicializar Google Directions Service si la API cargó
+    // Cargar Google Maps dinámicamente con la API Key de Vite
+    await this.cargarGoogleMapsScript();
     if (window.google && window.google.maps) {
       this.directionsService = new window.google.maps.DirectionsService();
     } else {
-      this.rutaError = "Google Maps API Key no proporcionada o script no cargado. Verifica VITE_GOOGLE_MAPS_API_KEY en .env";
+      this.rutaError = "Google Maps no disponible. Verifica VITE_GOOGLE_MAPS_API_KEY en .env";
     }
-    
     await this.cargarHeatmapData();
   },
   beforeUnmount() {
@@ -114,6 +151,35 @@ export default {
     }
   },
   methods: {
+    cargarGoogleMapsScript() {
+      return new Promise((resolve) => {
+        if (window.google && window.google.maps) { resolve(); return; }
+        const existing = document.getElementById('google-maps-script');
+        if (existing) { existing.addEventListener('load', resolve); existing.addEventListener('error', resolve); return; }
+        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+        if (!apiKey) { resolve(); return; }
+        const script = document.createElement('script');
+        script.id = 'google-maps-script';
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}`;
+        script.async = true;
+        script.defer = true;
+        script.onload = resolve;
+        script.onerror = resolve;
+        document.head.appendChild(script);
+      });
+    },
+
+    toggleFiltro(tipo) {
+      this.filtros[tipo] = !this.filtros[tipo];
+      if (tipo === 'coactiva' && this._layerCoactiva) {
+        this._layerCoactiva.visible = this.filtros.coactiva;
+      } else if (tipo === 'ordinaria' && this._layerOrdinaria) {
+        this._layerOrdinaria.visible = this.filtros.ordinaria;
+      } else if (tipo === 'sinProceso' && this._layerSinProceso) {
+        this._layerSinProceso.visible = this.filtros.sinProceso;
+      }
+    },
+
     async cargarHeatmapData() {
       try {
         const response = await api.get('/mapa/heatmap')
@@ -239,8 +305,10 @@ export default {
           renderer: renderSinProceso,
           title: "Sin Proceso",
           popupTemplate,
-          blendMode: "normal"
+          blendMode: "normal",
+          visible: this.filtros.sinProceso
         });
+        this._layerSinProceso = layerSinProceso;
 
         const layerOrdinaria = new FeatureLayer({
           source: gOrdinaria,
@@ -249,8 +317,10 @@ export default {
           renderer: renderOrdinaria,
           title: "Deuda Ordinaria",
           popupTemplate,
-          blendMode: "normal"
+          blendMode: "normal",
+          visible: this.filtros.ordinaria
         });
+        this._layerOrdinaria = layerOrdinaria;
 
         const layerCoactiva = new FeatureLayer({
           source: gCoactiva,
@@ -259,8 +329,10 @@ export default {
           renderer: renderCoactiva,
           title: "Deuda Coactiva",
           popupTemplate,
-          blendMode: "normal"
+          blendMode: "normal",
+          visible: this.filtros.coactiva
         });
+        this._layerCoactiva = layerCoactiva;
 
         map.addMany([layerSinProceso, layerOrdinaria, layerCoactiva, this.routeLayer, this.markersLayer]);
 
@@ -491,9 +563,10 @@ export default {
   padding: 1rem;
   border-radius: 8px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-  min-width: 200px;
+  min-width: 220px;
 }
-.legend-box h3 { margin-top: 0; margin-bottom: 0.5rem; color: #333; font-size: 1rem; }
+.legend-box h3 { margin-top: 0; margin-bottom: 0.25rem; color: #333; font-size: 1rem; }
+.filter-hint { font-size: 0.72rem; color: #aaa; margin-bottom: 0.6rem; }
 .legend-item {
   display: flex;
   align-items: center;
@@ -501,12 +574,41 @@ export default {
   margin-bottom: 0.25rem;
   font-size: 0.85rem;
 }
+.filter-btn {
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: all 0.18s;
+  user-select: none;
+  justify-content: space-between;
+}
+.filter-btn.active {
+  background: #f0fdf4;
+  border-color: #86efac;
+  font-weight: 600;
+}
+.filter-btn.inactive {
+  background: #f9fafb;
+  border-color: #e5e7eb;
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+.filter-btn:hover {
+  transform: translateX(2px);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+}
+.filter-icon {
+  margin-left: auto;
+  font-size: 0.75rem;
+}
 .color-dot {
   display: inline-block;
   width: 12px;
   height: 12px;
   border-radius: 50%;
   border: 1px solid rgba(0,0,0,0.2);
+  flex-shrink: 0;
 }
 .color-line {
   display: inline-block;

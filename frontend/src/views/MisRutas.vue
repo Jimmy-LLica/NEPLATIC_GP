@@ -11,6 +11,23 @@
         <span class="dot connected"></span> Sincronizado: {{ ultimaSincronizacion }}
       </div>
     </div>
+
+    <!-- Banner de geolocalización -->
+    <div v-if="geoEstado === 'solicitando'" class="geo-banner geo-pending">
+      📡 Solicitando acceso a tu ubicación... Por favor acepta el permiso en el navegador.
+    </div>
+    <div v-else-if="geoEstado === 'activo'" class="geo-banner geo-ok">
+      ✅ Ubicación activa — tu posición se está enviando en tiempo real.
+    </div>
+    <div v-else-if="geoEstado === 'denegado'" class="geo-banner geo-error">
+      ⚠️ Acceso a ubicación denegado. Ve a la configuración del navegador y activa el permiso de ubicación para este sitio.
+    </div>
+    <div v-else-if="geoEstado === 'noSoportado'" class="geo-banner geo-error">
+      ⚠️ Tu navegador no soporta geolocalización. Usa un navegador moderno (Chrome, Firefox, Edge).
+    </div>
+    <div v-else-if="geoEstado === 'noHttps'" class="geo-banner geo-error">
+      🔒 La geolocalización requiere una conexión segura (HTTPS). Contacta al administrador.
+    </div>
     
     <div v-if="loading" class="loading">Cargando datos de ruta...</div>
     
@@ -113,6 +130,7 @@ const loading = ref(false)
 const ruta = ref(null)
 const fecha = ref(new Date().toISOString().split('T')[0])
 const ultimaSincronizacion = ref('')
+const geoEstado = ref('idle') // idle | solicitando | activo | denegado | noSoportado | noHttps
 
 const formatNumber = (num) => {
   return num?.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'
@@ -182,27 +200,43 @@ const cargarRuta = async () => {
 let geoWatchId = null;
 
 const iniciarGeolocalizacion = () => {
-  if (navigator.geolocation) {
-    geoWatchId = navigator.geolocation.watchPosition(
-      async (position) => {
-        try {
-          await api.post('/rutas/ubicacion', {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        } catch (error) {
-          console.error('Error enviando ubicación:', error);
-        }
-      },
-      (error) => {
-        console.error('Error obteniendo ubicación:', error);
-        alert('Por favor active su ubicación para continuar trabajando.');
-      },
-      { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
-    );
-  } else {
-    alert('Su navegador no soporta geolocalización.');
+  // En VPS, la geolocalización requiere HTTPS
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    geoEstado.value = 'noHttps'
+    console.warn('[MisRutas] Geolocalización requiere HTTPS en producción')
+    return
   }
+
+  if (!navigator.geolocation) {
+    geoEstado.value = 'noSoportado'
+    return
+  }
+
+  geoEstado.value = 'solicitando'
+
+  geoWatchId = navigator.geolocation.watchPosition(
+    async (position) => {
+      geoEstado.value = 'activo'
+      try {
+        await api.post('/rutas/ubicacion', {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        })
+      } catch (error) {
+        console.error('Error enviando ubicación:', error)
+      }
+    },
+    (error) => {
+      console.error('Error obteniendo ubicación:', error)
+      if (error.code === 1) {
+        // PERMISSION_DENIED
+        geoEstado.value = 'denegado'
+      } else {
+        geoEstado.value = 'denegado'
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 }
+  )
 }
 
 onMounted(() => {
@@ -362,6 +396,30 @@ onBeforeUnmount(() => {
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.7rem;
+}
+
+/* Geo banner */
+.geo-banner {
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+.geo-pending {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
+.geo-ok {
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+}
+.geo-error {
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  color: #b91c1c;
 }
 .sin-ruta {
   text-align: center;
