@@ -230,3 +230,36 @@ openpyxl
 Pillow
 pandas
 tkinter
+
+---
+
+## Empaquetado Windows y publicacion en GitHub Releases
+
+La aplicacion de escritorio puede distribuirse como un ejecutable para Windows usando PyInstaller.
+No se debe subir el archivo `.env` al repositorio porque contiene credenciales reales.
+
+### Generar el ejecutable
+
+```powershell
+cd C:\Users\USUARIO\Documents\NEPLATIC_GP
+.\.venv\Scripts\Activate.ps1
+.\scripts\build_windows_release.ps1
+```
+
+El paquete listo para publicar queda en:
+
+```text
+release\NeplaticDesktop-Windows.zip
+```
+
+### Publicar como release en GitHub
+
+1. Subir los cambios del codigo fuente al repositorio.
+2. Entrar al repositorio en GitHub.
+3. Ir a `Releases`.
+4. Crear un nuevo release, por ejemplo `v1.0.0-windows`.
+5. Adjuntar el archivo `release\NeplaticDesktop-Windows.zip` en `Assets`.
+6. Publicar el release.
+
+El archivo `.zip` incluye `NeplaticDesktop.exe`, `.env.example` y `README-WINDOWS.md`.
+Cada equipo debe crear su propio `.env` a partir de `.env.example`.
