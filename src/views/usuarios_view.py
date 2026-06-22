@@ -1,4 +1,5 @@
 import tkinter as tk
+import threading
 from tkinter import messagebox, ttk
 
 from src.controllers.usuario_controller import UsuarioController
@@ -10,7 +11,9 @@ class UsuariosView(ttk.Frame):
         super().__init__(parent, style="App.TFrame")
         self.current_user = current_user
         self.controller = UsuarioController()
-        self.role_options = self.controller.listar_roles()
+        self.role_options = []
+        self.all_users = []
+        self._refresh_token = 0
         self._build()
         self.refresh()
 
@@ -91,8 +94,32 @@ class UsuariosView(ttk.Frame):
         self._search_after_id = self.after(200, self.load_users)
 
     def refresh(self):
-        self.role_options = self.controller.listar_roles()
-        self.all_users = self.controller.listar_usuarios()
+        self._refresh_token += 1
+        token = self._refresh_token
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        self.tree.insert("", tk.END, values=("...", "Cargando...", "", "", "", "", ""))
+        threading.Thread(target=self._load_users_async, args=(token,), daemon=True).start()
+
+    def _load_users_async(self, token):
+        try:
+            roles = self.controller.listar_roles()
+            users = self.controller.listar_usuarios()
+            self.after(0, lambda: self._apply_loaded_users(token, roles, users, None))
+        except Exception as exc:
+            self.after(0, lambda error=exc: self._apply_loaded_users(token, [], [], error))
+
+    def _apply_loaded_users(self, token, roles, users, error):
+        if token != self._refresh_token or not self.winfo_exists():
+            return
+        self.role_options = roles
+        self.all_users = users
+        if error:
+            for item in self.tree.get_children():
+                self.tree.delete(item)
+            self.tree.insert("", tk.END, values=("Error", str(error), "", "", "", "", ""))
+            messagebox.showerror("Usuarios", f"No fue posible cargar usuarios.\n\nDetalle: {error}", parent=self)
+            return
         self.load_users()
 
     def load_users(self):

@@ -1,4 +1,5 @@
 from pathlib import Path
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -14,6 +15,7 @@ class ReportesView(tk.Frame):
         self.controller = ReporteController()
         self.exporter = ReportGenerator(str(Path.cwd() / "scratch" / "reports"))
         self.data = {}
+        self._refresh_token = 0
         self._build()
         self.refresh()
 
@@ -90,12 +92,39 @@ class ReportesView(tk.Frame):
         return result
 
     def refresh(self):
-        try:
-            self.data = self.controller.exportable_dashboard()
-        except Exception as exc:
-            messagebox.showerror("Reportes", f"No fue posible cargar los reportes.\n\nDetalle: {exc}", parent=self)
-            self.data = {"dashboard": {}, "top_deudores": [], "sector": [], "evolucion": []}
+        self._refresh_token += 1
+        token = self._refresh_token
+        self.data = {"dashboard": {}, "top_deudores": [], "sector": [], "evolucion": []}
+        self._render_loading()
+        threading.Thread(target=self._load_reports_async, args=(token,), daemon=True).start()
 
+    def _render_loading(self):
+        for widget in self.summary_frame.winfo_children():
+            widget.destroy()
+        card = tk.Frame(self.summary_frame, bg=PALETTE["surface"], highlightbackground=PALETTE["border"], highlightthickness=1)
+        card.pack(fill=tk.X)
+        tk.Label(card, text="Cargando reportes...", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 10)).pack(anchor="w", padx=14, pady=14)
+        for tree in (self.sector_tree, self.top_tree, self.evolution_tree):
+            for item in tree.get_children():
+                tree.delete(item)
+            tree["columns"] = ["mensaje"]
+            tree.heading("mensaje", text="Estado")
+            tree.column("mensaje", width=220, anchor="w")
+            tree.insert("", "end", values=("Cargando...",))
+
+    def _load_reports_async(self, token):
+        try:
+            data = self.controller.exportable_dashboard()
+            self.after(0, lambda: self._apply_loaded_reports(token, data, None))
+        except Exception as exc:
+            self.after(0, lambda error=exc: self._apply_loaded_reports(token, {"dashboard": {}, "top_deudores": [], "sector": [], "evolucion": []}, error))
+
+    def _apply_loaded_reports(self, token, data, error):
+        if token != self._refresh_token or not self.winfo_exists():
+            return
+        self.data = data
+        if error:
+            messagebox.showerror("Reportes", f"No fue posible cargar los reportes.\n\nDetalle: {error}", parent=self)
         self._render_summary()
         self._apply_search()
 

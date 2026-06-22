@@ -43,57 +43,147 @@ class RutaController:
             ).order_by(RutaNotificacion.fecha_ruta.desc()).all()
 
     def listar_deudas_asignadas(self):
-        from src.models.contribuyente import Lote
+        from src.models.contribuyente import EstadoCobranza, Lote, Manzana, Sector, TipoTributo
         from sqlalchemy import extract
+
         with get_session() as db:
             current_year = datetime.now().year
+            Contribuyente = self._get_contribuyente_model()
+
             query = db.query(
                 RutaDetalle.id_deuda,
+                Contribuyente.nombres.label("contribuyente"),
+                Contribuyente.numero_documento.label("documento"),
+                Contribuyente.direccion_fiscal.label("direccion_fiscal"),
+                TipoTributo.nombre.label("tipo_tributo"),
                 Lote.codigo.label("codigo_lote"),
+                Lote.direccion.label("direccion_predio"),
+                Lote.area_terreno_m2.label("area_terreno_m2"),
+                Lote.area_construida_m2.label("area_construida_m2"),
+                Lote.uso.label("uso_predio"),
+                Lote.latitud,
+                Lote.longitud,
+                Manzana.codigo.label("manzana"),
+                Sector.nombre.label("sector"),
+                Deuda.anio_tributo,
+                Deuda.periodo,
+                Deuda.monto_original,
+                Deuda.saldo_pendiente.label("saldo"),
+                EstadoCobranza.nombre.label("estado_cobranza"),
+                Deuda.fecha_vencimiento,
                 RutaDetalle.orden_visita,
-                RutaDetalle.visitado
+                RutaDetalle.visitado,
             ).join(
                 RutaNotificacion, RutaDetalle.id_ruta == RutaNotificacion.id_ruta
             ).join(
                 Deuda, RutaDetalle.id_deuda == Deuda.id_deuda
             ).join(
+                Contribuyente, Deuda.id_contribuyente == Contribuyente.id_contribuyente
+            ).join(
+                TipoTributo, Deuda.id_tipo_tributo == TipoTributo.id_tipo_tributo
+            ).join(
+                EstadoCobranza, Deuda.id_estado_cobranza == EstadoCobranza.id_estado
+            ).outerjoin(
                 Lote, Deuda.id_lote == Lote.id_lote
+            ).outerjoin(
+                Manzana, Lote.id_manzana == Manzana.id_manzana
+            ).outerjoin(
+                Sector, Manzana.id_sector == Sector.id_sector
             ).filter(
-                extract('year', Deuda.fecha_vencimiento) == current_year,
-                RutaNotificacion.estado_ruta != 'TERMINADA'
+                extract("year", Deuda.fecha_vencimiento) == current_year,
+                Deuda.activo == True,
+                Deuda.saldo_pendiente > 0,
+                RutaNotificacion.estado_ruta != "TERMINADA",
             )
-            
-            # Si es NOTIFICADOR (3), limitamos a sus rutas. Si es ADMIN (1) o SUPERVISOR (2), las ve todas.
+
             if self.user.id_rol == 3:
                 query = query.filter(RutaNotificacion.id_usuario == self.user.id_usuario)
 
-            return query.all()
+            return query.order_by(RutaDetalle.orden_visita.asc()).limit(500).all()
+
+    def obtener_detalle_ubicacion_ruta(self, id_ruta: int):
+        from src.models.contribuyente import EstadoCobranza, Lote, Manzana, Sector, TipoTributo
+
+        with get_session() as db:
+            Contribuyente = self._get_contribuyente_model()
+            query = db.query(
+                RutaDetalle.orden_visita,
+                RutaDetalle.visitado,
+                RutaDetalle.id_deuda,
+                Contribuyente.nombres.label("contribuyente"),
+                Contribuyente.numero_documento.label("documento"),
+                TipoTributo.nombre.label("tipo_tributo"),
+                Lote.codigo.label("codigo_lote"),
+                Lote.direccion.label("direccion_predio"),
+                Lote.latitud,
+                Lote.longitud,
+                Manzana.codigo.label("manzana"),
+                Sector.nombre.label("sector"),
+                Deuda.saldo_pendiente.label("saldo"),
+                EstadoCobranza.nombre.label("estado_cobranza"),
+            ).join(
+                RutaNotificacion, RutaDetalle.id_ruta == RutaNotificacion.id_ruta
+            ).join(
+                Deuda, RutaDetalle.id_deuda == Deuda.id_deuda
+            ).join(
+                Contribuyente, Deuda.id_contribuyente == Contribuyente.id_contribuyente
+            ).join(
+                TipoTributo, Deuda.id_tipo_tributo == TipoTributo.id_tipo_tributo
+            ).join(
+                EstadoCobranza, Deuda.id_estado_cobranza == EstadoCobranza.id_estado
+            ).outerjoin(
+                Lote, Deuda.id_lote == Lote.id_lote
+            ).outerjoin(
+                Manzana, Lote.id_manzana == Manzana.id_manzana
+            ).outerjoin(
+                Sector, Manzana.id_sector == Sector.id_sector
+            ).filter(
+                RutaDetalle.id_ruta == id_ruta
+            )
+            if self.user.id_rol == 3:
+                query = query.filter(RutaNotificacion.id_usuario == self.user.id_usuario)
+            return query.order_by(RutaDetalle.orden_visita.asc()).all()
 
     def listar_deudas_anio_actual(self):
         """Lista TODAS las deudas activas del año actual para la vista del administrador."""
-        from src.models.contribuyente import Lote, EstadoCobranza
+        from src.models.contribuyente import EstadoCobranza, Lote, Manzana, Sector, TipoTributo
         from src.models.deuda import Deuda
-        from src.models.contribuyente import Sector, Manzana
-        from sqlalchemy import func as sa_func
         with get_session() as db:
             current_year = datetime.now().year
 
-            from sqlalchemy.orm import aliased
-            Contribuyente = aliased(self._get_contribuyente_model())
+            Contribuyente = self._get_contribuyente_model()
 
             results = db.query(
                 Deuda.id_deuda,
                 Contribuyente.nombres.label("contribuyente"),
                 Contribuyente.numero_documento.label("documento"),
+                Contribuyente.direccion_fiscal.label("direccion_fiscal"),
+                TipoTributo.nombre.label("tipo_tributo"),
                 Lote.codigo.label("codigo_lote"),
-                Lote.direccion.label("direccion"),
+                Lote.direccion.label("direccion_predio"),
+                Lote.area_terreno_m2.label("area_terreno_m2"),
+                Lote.area_construida_m2.label("area_construida_m2"),
+                Lote.uso.label("uso_predio"),
+                Lote.latitud,
+                Lote.longitud,
+                Manzana.codigo.label("manzana"),
+                Sector.nombre.label("sector"),
+                Deuda.periodo,
+                Deuda.monto_original,
                 Deuda.saldo_pendiente.label("saldo"),
                 Deuda.anio_tributo,
                 EstadoCobranza.nombre.label("estado_cobranza"),
+                Deuda.fecha_vencimiento,
             ).join(
                 Contribuyente, Deuda.id_contribuyente == Contribuyente.id_contribuyente
+            ).join(
+                TipoTributo, Deuda.id_tipo_tributo == TipoTributo.id_tipo_tributo
             ).outerjoin(
                 Lote, Deuda.id_lote == Lote.id_lote
+            ).outerjoin(
+                Manzana, Lote.id_manzana == Manzana.id_manzana
+            ).outerjoin(
+                Sector, Manzana.id_sector == Sector.id_sector
             ).join(
                 EstadoCobranza, Deuda.id_estado_cobranza == EstadoCobranza.id_estado
             ).filter(

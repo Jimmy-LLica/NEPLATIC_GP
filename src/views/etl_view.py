@@ -1,4 +1,5 @@
 import os
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from tkinter.scrolledtext import ScrolledText
@@ -74,8 +75,16 @@ class EtlView(tk.Frame):
             return
         self._log("Iniciando ETL...")
         self.status_label.config(text="Ejecutando...")
-        self.update_idletasks()
-        ok, msg = run_etl()
+        threading.Thread(target=self._run_etl_async, daemon=True).start()
+
+    def _run_etl_async(self):
+        try:
+            ok, msg = run_etl()
+        except Exception as exc:
+            ok, msg = False, str(exc)
+        self.after(0, lambda: self._finish_etl(ok, msg))
+
+    def _finish_etl(self, ok, msg):
         if ok:
             self._log("ETL completado correctamente.")
             self.status_label.config(text="Proceso completado correctamente.")
