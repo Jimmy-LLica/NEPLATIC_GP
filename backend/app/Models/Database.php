@@ -4,11 +4,21 @@ namespace Neplatic\Models;
 use PDO;
 use PDOException;
 
+/**
+ * Clase Singleton para manejar la conexión a PostgreSQL usando PDO.
+ * Garantiza que solo exista una instancia de conexión a la base de datos
+ * durante el ciclo de vida de la petición (Patrón Singleton).
+ */
 class Database
 {
     private static $instance = null;
     private $connection;
     
+    /**
+     * Constructor privado para prevenir creación externa.
+     * Lee las credenciales de entorno (.env) y establece la conexión PDO
+     * con manejo de errores en modo Exception.
+     */
     private function __construct()
     {
         $host = $_ENV['DB_HOST'];
@@ -31,7 +41,12 @@ class Database
         }
     }
     
-    public static function getInstance()
+    /**
+     * Obtiene la única instancia de la clase Database.
+     * 
+     * @return self Instancia Singleton
+     */
+    public static function getInstance(): self
     {
         if (self::$instance === null) {
             self::$instance = new Database();
@@ -39,24 +54,51 @@ class Database
         return self::$instance;
     }
     
-    public function getConnection()
+    /**
+     * Devuelve el objeto PDO subyacente para realizar operaciones manuales (transacciones).
+     * 
+     * @return \PDO
+     */
+    public function getConnection(): \PDO
     {
         return $this->connection;
     }
     
-    public function query($sql, $params = [])
+    /**
+     * Ejecuta una consulta SQL genérica que no devuelve resultados (INSERT, UPDATE, DELETE).
+     * 
+     * @param string $sql Consulta SQL
+     * @param array $params Parámetros para prepared statements
+     * @return bool True si tuvo éxito
+     */
+    public function query(string $sql, array $params = []): bool
     {
         $stmt = $this->connection->prepare($sql);
         $stmt->execute($params);
         return $stmt;
     }
     
-    public function fetchAll($sql, $params = [])
+    /**
+     * Ejecuta una consulta SQL SELECT y retorna todos los resultados como un arreglo asociativo.
+     * 
+     * @param string $sql
+     * @param array $params
+     * @return array
+     */
+    public function fetchAll(string $sql, array $params = []): array
     {
         return $this->query($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
     }
     
-    public function fetchOne($sql, $params = [])
+    /**
+     * Ejecuta una consulta SQL SELECT y retorna un solo resultado (el primer registro).
+     * Útil para búsquedas por ID o verificaciones de existencia.
+     * 
+     * @param string $sql
+     * @param array $params
+     * @return array|false Fila asociativa o false si no existe
+     */
+    public function fetchOne(string $sql, array $params = [])
     {
         return $this->query($sql, $params)->fetch(PDO::FETCH_ASSOC);
     }

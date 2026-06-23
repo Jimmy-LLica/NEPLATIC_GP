@@ -40,7 +40,7 @@ $routes = require __DIR__ . '/routes/api.php';
 $routes($app);
 
 // Ruta de información del sistema
-$app->get('/', function (Request $request, Response $response) {
+$app->get('/api', function (Request $request, Response $response) {
     $response->getBody()->write(json_encode([
         'name' => 'Neplatic Web API',
         'version' => '2.0.0',

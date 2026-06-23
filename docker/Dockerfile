@@ -14,6 +14,11 @@ COPY ../frontend/dist /var/www/html/
 
 RUN chown -R www-data:www-data /var/www/html
 
+RUN apt-get install -y ssl-cert \
+    && make-ssl-cert generate-default-snakeoil --force-overwrite \
+    && a2enmod ssl \
+    && a2ensite default-ssl
+
 RUN a2enmod rewrite headers
 
-EXPOSE 80
+EXPOSE 80 443

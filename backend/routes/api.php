@@ -35,5 +35,10 @@ return function ($app) {
         // Notificaciones (Web)
         $group->post('/notificaciones/registrar', [Neplatic\Http\Controllers\Api\NotificacionController::class, 'registrar']);
         
+        // Soporte / TI
+        $group->get('/soporte/estado', [Neplatic\Http\Controllers\Api\SoporteController::class, 'getEstado']);
+        $group->post('/soporte/limpiar-cache', [Neplatic\Http\Controllers\Api\SoporteController::class, 'limpiarCache']);
+        $group->get('/soporte/usuarios', [Neplatic\Http\Controllers\Api\SoporteController::class, 'getUsuarios']);
+        
     })->add(new AuthMiddleware());
 };

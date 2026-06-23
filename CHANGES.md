@@ -19,6 +19,11 @@ En esta actualización se realizaron tres mejoras principales al sistema Neplati
 - **Archivos Modificados:** `frontend/src/views/Login.vue` y `frontend/src/App.vue`.
 - **Solución implementada:** Se cambió la navegación por Vue Router (`router.push`) a redirecciones completas vía `window.location.href = '/dashboard'` (y `/login`). Esta es la opción más sencilla y robusta para garantizar que toda la SPA se recargue y tome el nuevo token/usuario del caché del navegador sin introducir más complejidad como Pinia o EventBus.
 
-### 4. Documentación
+### 4. Documentación y Estandarización de Código
+- Se agregaron comentarios profesionales estilo JSDoc y PHPDoc a todos los archivos críticos: `Database.php`, `RedisService.php`, `RutaController.php`, `AuthController.php`, `SoporteController.php`, `MapaMorosidad.vue`, `MisRutas.vue`, `Monitoreo.vue`, `Soporte.vue`, `router/index.js` y `api/index.js`.
 - Se generó el archivo `README.md` que incluye instrucciones completas sobre arquitectura, base de datos y cómo levantar ambos entornos (frontend y backend).
 - Se generó este archivo `CHANGES.md`.
+
+### 5. Configuración de Despliegue y Enrutamiento Base
+- Se corrigió el archivo `.htaccess` del backend agregando `DirectoryIndex index.html` para que el servidor web priorice la carga de la aplicación Vue (Frontend) en la raíz (`/`) del dominio, en vez de cargar el `index.php` del API.
+- Se redefinió la ruta del health-check base en `backend/index.php` de `$app->get('/', ...)` a `$app->get('/api', ...)` para liberar el root path y evitar conflictos.

@@ -36,17 +36,11 @@ Neplatic es un sistema web para la visualización, gestión y seguimiento de la 
 
 ## Instalación y Configuración
 
-### 1. Base de Datos
-1. Crea una base de datos en PostgreSQL con soporte para PostGIS:
-   ```sql
-   CREATE DATABASE neplatic;
-   \c neplatic
-   CREATE EXTENSION postgis;
-   ```
-2. Ejecuta el script SQL incluido para generar el esquema, las vistas y los datos de prueba:
-   ```bash
-   psql -U postgres -d neplatic -f neplatic_corregido.sql
-   ```
+### 1. Base de Datos (Producción)
+La base de datos PostgreSQL ya se encuentra alojada y configurada en producción con la extensión PostGIS habilitada.
+El sistema se conecta a la base de datos `neplatic`.
+Para interactuar con ella, la aplicación utiliza las credenciales definidas en el archivo `backend/.env`.
+Asegúrate de que el servidor/VPS tenga acceso por puerto `5432` a dicha base de datos.
 
 ### 2. Backend (API)
 1. Navega a la carpeta `backend` e instala las dependencias:
@@ -93,3 +87,5 @@ Para acceder al sistema, puedes utilizar el siguiente usuario de prueba:
 | `GET`  | `/api/dashboard/kpis` | Métricas generales gerenciales |
 | `GET`  | `/api/mapa/sectores` | Retorna el GeoJSON de los sectores para el mapa |
 | `GET`  | `/api/rutas/mis-rutas`| Obtiene las rutas asignadas al notificador logueado |
+| `GET`  | `/api/rutas/ubicaciones-activas` | Obtiene ubicación de notificadores (Para el mapa de monitoreo) |
+| `POST` | `/api/soporte/limpiar-cache` | Limpia caché de Redis de la aplicación |

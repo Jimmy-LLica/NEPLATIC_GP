@@ -6,8 +6,22 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Neplatic\Models\Database;
 use Neplatic\Services\RedisService;
 
+/**
+ * Controlador para la gestión de rutas y ubicación de notificadores.
+ * Proporciona endpoints para asignar, listar y actualizar el estado de las visitas en campo,
+ * además de rastrear la ubicación GPS en tiempo real usando Redis.
+ */
 class RutaController
 {
+    /**
+     * Obtiene la ruta asignada al notificador (rol NORMAL) para una fecha específica.
+     * Busca primero en caché (Redis) para reducir la carga de la BD; si no existe,
+     * la consulta en la vista `v_ruta_asignada` y la almacena en caché.
+     *
+     * @param Request $request
+     * @param Response $response
+     * @return Response Retorna JSON con las deudas asignadas o un objeto vacío.
+     */
     public function getMisRutas(Request $request, Response $response): Response
     {
         $usuario = $request->getAttribute('usuario');
@@ -72,6 +86,14 @@ class RutaController
         return $response->withHeader('Content-Type', 'application/json');
     }
     
+    /**
+     * Recupera las rutas futuras (o en curso) asignadas a un notificador.
+     * Se usa para previsualizar el trabajo planificado en días siguientes.
+     * 
+     * @param Request $request
+     * @param Response $response
+     * @return Response JSON con una lista de rutas planificadas.
+     */
     public function getRutasFuturas(Request $request, Response $response): Response
     {
         $usuario = $request->getAttribute('usuario');
@@ -117,6 +139,15 @@ class RutaController
         return $response->withHeader('Content-Type', 'application/json');
     }
 
+    /**
+     * Registra el resultado de una visita de notificación en campo.
+     * Guarda la acción en PostgreSQL, actualiza el estado de la deuda y emite
+     * un evento a Redis (EDA) para que el Dashboard gerencial se actualice en vivo.
+     * 
+     * @param Request $request (body json: id_ruta, id_deuda, resultado, observacion)
+     * @param Response $response
+     * @return Response JSON de éxito o error HTTP 500 si falla la transacción.
+     */
     public function notificar(Request $request, Response $response): Response
     {
         $usuario = $request->getAttribute('usuario');
@@ -180,6 +211,15 @@ class RutaController
         }
     }
 
+    /**
+     * Guarda la ubicación actual del notificador (lat, lng) recibida desde la app web móvil.
+     * Los datos se almacenan exclusivamente en Redis con un TTL (tiempo de vida) de 5 minutos,
+     * optimizando el rendimiento al evitar escrituras masivas en PostgreSQL.
+     * 
+     * @param Request $request
+     * @param Response $response
+     * @return Response
+     */
     public function guardarUbicacion(Request $request, Response $response): Response
     {
         $usuario = $request->getAttribute('usuario');
@@ -192,19 +232,27 @@ class RutaController
         if ($lat && $lng) {
             $redis = RedisService::getInstance();
             // Guardamos la ubicación con un TTL de 5 minutos
-            $redis->set("ubicacion_usuario_{$usuarioId}", json_encode([
+            $redis->set("ubicacion_usuario_{$usuarioId}", [
                 'lat' => $lat,
                 'lng' => $lng,
                 'nombres' => $usuario['nombres'] ?? 'Notificador',
                 'apellidos' => $usuario['apellidos'] ?? '',
                 'timestamp' => time()
-            ]), 300);
+            ], 300);
         }
         
         $response->getBody()->write(json_encode(['success' => true]));
         return $response->withHeader('Content-Type', 'application/json');
     }
 
+    /**
+     * Extrae todas las ubicaciones activas de notificadores desde Redis.
+     * Endpoint restringido a roles ADMIN y SUPERVISOR para monitoreo en vivo en el mapa principal.
+     * 
+     * @param Request $request
+     * @param Response $response
+     * @return Response JSON con array de ubicaciones (lat, lng, nombres, timestamp).
+     */
     public function getUbicaciones(Request $request, Response $response): Response
     {
         $usuario = $request->getAttribute('usuario');
@@ -216,18 +264,19 @@ class RutaController
         }
         
         $redis = RedisService::getInstance();
-        // Usamos pattern matching si el cliente redis lo soporta, o mantenemos un set. 
-        // Para simplificar, asumimos que sabemos los IDs o leemos todas las keys.
-        // Dado que phpredis tiene keys():
-        $keys = $redis->keys('ubicacion_usuario_*');
+        $prefix = $_ENV['REDIS_PREFIX'] ?? '';
+        $keys = $redis->getClient()->keys($prefix . 'ubicacion_usuario_*');
         $ubicaciones = [];
         
         foreach ($keys as $key) {
-            // Redis puede retornar claves con prefijo, limpiar si es necesario
-            $key = str_replace(getenv('REDIS_PREFIX') ?? '', '', $key);
-            $data = $redis->get($key);
+            $localKey = empty($prefix) ? $key : substr($key, strlen($prefix));
+            $data = $redis->get($localKey); // get() already JSON decodes
             if ($data) {
-                $ubicaciones[] = json_decode($data, true);
+                // Because we previously double-encoded or maybe just saved string, let's ensure it's array
+                if (is_string($data)) {
+                    $data = json_decode($data, true);
+                }
+                $ubicaciones[] = $data;
             }
         }
         

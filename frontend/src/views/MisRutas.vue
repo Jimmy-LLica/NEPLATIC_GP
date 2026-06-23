@@ -71,12 +71,14 @@
           <div :class="['estado-badge', deuda.estado_cobranza.toLowerCase()]">
             {{ deuda.estado_cobranza }}
           </div>
-          <div v-if="deuda.fue_visitado" class="visitado-badge">
-            ✅ {{ deuda.resultado_notificacion || 'Visitado' }}
+          <div class="botones-deuda">
+            <button v-if="!deuda.fue_visitado" class="btn-notificar" @click="abrirModalNotificar(deuda)">
+              Notificar Visita
+            </button>
+            <button class="btn-navegar" @click="abrirNavegacion(deuda)">
+              📍 Navegar
+            </button>
           </div>
-          <button v-else class="btn-notificar" @click="abrirModalNotificar(deuda)">
-            Notificar Visita
-          </button>
         </div>
       </div>
     </div>
@@ -159,6 +161,10 @@ const cerrarModal = () => {
   deudaSeleccionada.value = null
 }
 
+/**
+ * Envía el resultado de la notificación (ej. Notificado, Ausente) al backend.
+ * Cierra el modal y recarga la lista de rutas para mostrar el progreso en tiempo real.
+ */
 const guardarNotificacion = async () => {
   if (!formNotificacion.value.resultado) {
     alert('Seleccione un resultado de notificación')
@@ -184,6 +190,27 @@ const guardarNotificacion = async () => {
   }
 }
 
+/**
+ * Extrae la latitud y longitud del lote asociado a la deuda y abre
+ * una nueva pestaña de Google Maps con la ruta (Directions) desde la posición actual.
+ * @param {Object} deuda Objeto de la deuda que incluye las coordenadas del lote.
+ */
+const abrirNavegacion = (deuda) => {
+  const lat = deuda.latitud || deuda.lat;
+  const lng = deuda.longitud || deuda.lng;
+  
+  if (lat && lng) {
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`
+    window.open(url, '_blank')
+  } else {
+    alert('Esta deuda no tiene coordenadas geográficas registradas.')
+  }
+}
+
+/**
+ * Descarga las deudas programadas en la fecha seleccionada para el notificador actual.
+ * Se alimenta de la respuesta cacheadad por el backend (Redis) para una carga ultrarrápida.
+ */
 const cargarRuta = async () => {
   loading.value = true
   try {
@@ -199,6 +226,12 @@ const cargarRuta = async () => {
 
 let geoWatchId = null;
 
+/**
+ * Solicita permisos de Geolocalización al navegador e inicia un "watchPosition".
+ * Envía la posición del notificador periódicamente al backend (Redis) para
+ * alimentar el panel de Monitoreo de los Supervisores/Admins en tiempo real.
+ * NOTA: Requiere entorno HTTPS activo en producción.
+ */
 const iniciarGeolocalizacion = () => {
   // En VPS, la geolocalización requiere HTTPS
   if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
@@ -454,6 +487,25 @@ onBeforeUnmount(() => {
 }
 .btn-notificar:hover {
   background: #1d4ed8;
+}
+.botones-deuda {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 120px;
+}
+.btn-navegar {
+  background: #10b981;
+  color: white;
+  border: none;
+  padding: 0.5rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: bold;
+  text-align: center;
+}
+.btn-navegar:hover {
+  background: #059669;
 }
 
 /* Modal Styles */

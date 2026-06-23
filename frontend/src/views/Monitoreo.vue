@@ -77,11 +77,16 @@ const errorMapa = ref('')
 const notificadores = ref([])
 const ultimaActualizacion = ref('')
 
+// Variables globales para la instancia de Google Maps y temporizador
 let map = null
 let markers = {}
 let intervalId = null
 
-// Carga dinámica del script de Google Maps usando la variable de entorno de Vite
+/**
+ * Carga dinámica del script de Google Maps usando la variable de entorno de Vite.
+ * Inyecta el script en el DOM solo si no existe, previniendo bloqueos en el render inicial.
+ * @returns {Promise} Se resuelve cuando Google Maps está listo.
+ */
 const cargarGoogleMapsScript = () => {
   return new Promise((resolve, reject) => {
     // Si ya está cargado, resolver inmediatamente
@@ -115,6 +120,10 @@ const cargarGoogleMapsScript = () => {
   })
 }
 
+/**
+ * Inicializa el mapa base de Google Maps, establece estilos personalizados
+ * y arranca el ciclo de actualización de ubicaciones de notificadores cada 10 segundos.
+ */
 const initMap = async () => {
   try {
     await cargarGoogleMapsScript()
@@ -138,6 +147,10 @@ const initMap = async () => {
   }
 }
 
+/**
+ * Realiza un polling (petición periódica) al backend para consultar Redis
+ * y obtener las coordenadas GPS más recientes enviadas por los notificadores activos.
+ */
 const fetchUbicaciones = async () => {
   try {
     const res = await api.get('/rutas/ubicaciones-activas')
@@ -151,6 +164,12 @@ const fetchUbicaciones = async () => {
   }
 }
 
+/**
+ * Refresca la capa de marcadores (Markers) en Google Maps.
+ * Identifica a los notificadores, mueve su marcador a la nueva posición usando `setPosition`
+ * o crea uno nuevo si recién se conectaron. Además, limpia los desconectados.
+ * @param {Array} ubicaciones Lista de coordenadas y datos recibidos desde el backend.
+ */
 const actualizarMarcadores = (ubicaciones) => {
   if (!map || !window.google) return
 
@@ -213,6 +232,11 @@ const buildInfoContent = (ub) => {
   `
 }
 
+/**
+ * Realiza un "Pan & Zoom" hacia la ubicación exacta de un notificador seleccionado
+ * desde la lista lateral y abre su globo de información (InfoWindow).
+ * @param {Object} n Notificador seleccionado
+ */
 const centrarEnNotificador = (n) => {
   if (!map) return
   const key = n.nombres + n.apellidos

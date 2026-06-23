@@ -6,8 +6,22 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Neplatic\Models\Database;
 use Neplatic\Utils\JwtHelper;
 
+/**
+ * Controlador de Autenticación.
+ * Gestiona el inicio de sesión de los usuarios, verificación de contraseñas
+ * y la emisión de tokens JWT para la protección de las rutas de la API.
+ */
 class AuthController
 {
+    /**
+     * Inicia sesión en el sistema validando credenciales y generando un JWT.
+     * Busca al usuario en la base de datos (neplatic.usuario), verifica si
+     * la cuenta está activa, y emite un token válido por el tiempo definido en JWT_EXPIRES.
+     *
+     * @param Request $request JSON payload (username, password)
+     * @param Response $response
+     * @return Response JSON con token JWT y datos del usuario, o mensaje de error (401/403).
+     */
     public function login(Request $request, Response $response): Response
     {
         $data = json_decode($request->getBody()->getContents(), true);

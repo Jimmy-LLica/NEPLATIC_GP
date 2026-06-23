@@ -151,6 +151,12 @@ export default {
     }
   },
   methods: {
+    /**
+     * Inyecta dinámicamente el script de Google Maps API en el documento HTML.
+     * Es necesario para habilitar el servicio de enrutamiento (DirectionsService)
+     * sin sobrecargar la carga inicial de la aplicación.
+     * @returns {Promise} Se resuelve cuando el script carga exitosamente.
+     */
     cargarGoogleMapsScript() {
       return new Promise((resolve) => {
         if (window.google && window.google.maps) { resolve(); return; }
@@ -169,6 +175,10 @@ export default {
       });
     },
 
+    /**
+     * Activa o desactiva la visibilidad de una capa de deuda en el mapa (ArcGIS).
+     * @param {string} tipo Identificador del filtro ('coactiva', 'ordinaria', 'sinProceso')
+     */
     toggleFiltro(tipo) {
       this.filtros[tipo] = !this.filtros[tipo];
       if (tipo === 'coactiva' && this._layerCoactiva) {
@@ -180,6 +190,10 @@ export default {
       }
     },
 
+    /**
+     * Realiza una petición GET al backend para obtener los datos agregados
+     * de lotes con deuda y poder graficarlos como un mapa de calor (heatmap).
+     */
     async cargarHeatmapData() {
       try {
         const response = await api.get('/mapa/heatmap')
@@ -194,6 +208,11 @@ export default {
         this.cargando = false
       }
     },
+    /**
+     * Inicializa el visor geográfico utilizando ArcGIS API for JavaScript.
+     * Convierte los puntos de calor en "Graphics" y configura Renderizadores (HeatmapRenderer)
+     * específicos para diferenciar visualmente los estados de deuda mediante colores.
+     */
     inicializarMapa() {
       window.require([
         "esri/Map",
@@ -396,6 +415,10 @@ export default {
       
       this.markersLayer.add(graphic);
     },
+    /**
+     * Consulta la API de Google Maps Directions para trazar la ruta óptima
+     * en vehículo (DRIVING) entre los puntos de Origen y Destino seleccionados por el usuario.
+     */
     calcularRuta() {
       if (!this.directionsService || !this.origen || !this.destino) return;
       
@@ -422,6 +445,11 @@ export default {
         }
       });
     },
+    /**
+     * Dibuja una polilínea sobre el mapa base de ArcGIS usando las coordenadas
+     * devueltas previamente por el servicio de Google Maps.
+     * @param {Array} paths Array de arrays con pares [lng, lat]
+     */
     dibujarLineaArcGIS(paths) {
       if (!this.routeLayer || !this._createGraphic) return;
       
@@ -450,6 +478,10 @@ export default {
       if (this.routeLayer) this.routeLayer.removeAll();
       if (this.markersLayer) this.markersLayer.removeAll();
     },
+    /**
+     * Envía la notificación y observaciones ingresadas en el popup del mapa al backend,
+     * actualizando el estado del lote en la base de datos PostgreSQL.
+     */
     async guardarNotificacion() {
       if (!this.selectedLote) return;
       this.guardando = true;
