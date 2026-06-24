@@ -32,12 +32,7 @@ class EtlView(tk.Frame):
         self.status_label = tk.Label(top, text="", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 9))
         self.status_label.pack(anchor="w", pady=(4, 12))
 
-        env_ok = all([
-            bool(os.getenv("ORACLE_DSN")),
-            bool(os.getenv("ORACLE_USER")),
-            bool(os.getenv("ORACLE_PWD")),
-        ])
-        self.status_label.config(text="Listo para ejecutar" if env_ok else "Faltan variables ORACLE_DSN, ORACLE_USER u ORACLE_PWD")
+        self.status_label.config(text="Listo para ejecutar (Modo Simulado)")
 
         buttons = tk.Frame(inner, bg=PALETTE["surface"])
         buttons.pack(fill=tk.X, pady=(0, 12))

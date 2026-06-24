@@ -479,44 +479,232 @@ class RutasView(tk.Frame):
         threading.Thread(target=load_detail, daemon=True).start()
 
     def asignar_ruta_dialog(self):
+        from datetime import date, datetime
+
         dialog = tk.Toplevel(self)
-        dialog.title("Asignar Ruta por Sector")
-        dialog.geometry("450x300")
-        dialog.resizable(False, False)
+        dialog.title("Asignar Ruta a Notificador")
+        dialog.geometry("1100x680")
+        dialog.resizable(True, True)
         dialog.transient(self)
         dialog.grab_set()
         dialog.configure(bg=PALETTE["app_bg"])
 
-        frame = tk.Frame(dialog, bg=PALETTE["surface"], highlightbackground=PALETTE["border"], highlightthickness=1, padx=20, pady=20)
-        frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=16)
-        
-        tk.Label(frame, text="Asignar Nuevo Sector", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 14)).pack(anchor="w", pady=(0, 15))
+        frame = tk.Frame(dialog, bg=PALETTE["surface"], highlightbackground=PALETTE["border"], highlightthickness=1, padx=16, pady=14)
+        frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=12)
+
+        tk.Label(frame, text="Asignar Ruta a Notificador", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 14)).pack(anchor="w", pady=(0, 10))
 
         notificadores = self.controller.obtener_notificadores()
         sectores = self.controller.obtener_sectores()
 
         if not notificadores or not sectores:
-            messagebox.showerror("Error", "Debe haber notificadores y sectores registrados en el sistema.", parent=dialog)
+            messagebox.showerror("Error", "Debe haber notificadores y sectores registrados.", parent=dialog)
             dialog.destroy()
             return
 
-        tk.Label(frame, text="Notificador:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(0, 5))
+        # --- Row 1: Notificador, Fecha, Sector, Distancia ---
+        top_row = tk.Frame(frame, bg=PALETTE["surface"])
+        top_row.pack(fill=tk.X, pady=(0, 10))
+
+        # Notificador
+        tk.Label(top_row, text="Notificador:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(side=tk.LEFT, padx=(0, 4))
         notificador_var = tk.StringVar()
-        notificador_cb = ttk.Combobox(frame, textvariable=notificador_var, values=[f"{n.id_usuario} - {n.nombres} {n.apellidos}" for n in notificadores], style="Modern.TCombobox", state="readonly")
-        notificador_cb.pack(fill=tk.X, pady=(0, 15))
+        notificador_cb = ttk.Combobox(top_row, textvariable=notificador_var, values=[f"{n.id_usuario} - {n.nombres} {n.apellidos}" for n in notificadores], style="Modern.TCombobox", state="readonly", width=22)
+        notificador_cb.pack(side=tk.LEFT, padx=(0, 14))
         notificador_cb.current(0)
 
-        tk.Label(frame, text="Sector:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(anchor="w", pady=(0, 5))
+        # Fecha
+        tk.Label(top_row, text="Fecha:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(side=tk.LEFT, padx=(0, 4))
+        fecha_var = tk.StringVar(value=date.today().strftime("%Y-%m-%d"))
+        fecha_entry = ttk.Entry(top_row, textvariable=fecha_var, style="Modern.TEntry", width=12)
+        fecha_entry.pack(side=tk.LEFT, padx=(0, 14))
+
+        # Sector
+        tk.Label(top_row, text="Filtrar sector:", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(side=tk.LEFT, padx=(0, 4))
         sector_var = tk.StringVar()
-        sector_cb = ttk.Combobox(frame, textvariable=sector_var, values=[f"{s.id_sector} - {s.nombre}" for s in sectores], style="Modern.TCombobox", state="readonly")
-        sector_cb.pack(fill=tk.X, pady=(0, 20))
+        sector_options = ["Todos los sectores"] + [f"{s.id_sector} - {s.nombre}" for s in sectores]
+        sector_cb = ttk.Combobox(top_row, textvariable=sector_var, values=sector_options, style="Modern.TCombobox", state="readonly", width=22)
+        sector_cb.pack(side=tk.LEFT, padx=(0, 14))
         sector_cb.current(0)
 
+        # Distancia estimada
+        tk.Label(top_row, text="Dist. (km):", bg=PALETTE["surface"], fg=PALETTE["text"], font=("Segoe UI Semibold", 9)).pack(side=tk.LEFT, padx=(0, 4))
+        distancia_var = tk.StringVar(value="2.5")
+        distancia_entry = ttk.Entry(top_row, textvariable=distancia_var, style="Modern.TEntry", width=6)
+        distancia_entry.pack(side=tk.LEFT)
+
+        # --- Status bar ---
+        status_row = tk.Frame(frame, bg=PALETTE["surface"])
+        status_row.pack(fill=tk.X, pady=(0, 6))
+        status_label = tk.Label(status_row, text="Selecciona un sector para cargar deudas con GPS...", bg=PALETTE["surface"], fg=PALETTE["text_muted"], font=("Segoe UI", 9))
+        status_label.pack(side=tk.LEFT)
+        count_label = tk.Label(status_row, text="Seleccionadas: 0", bg=PALETTE["surface"], fg=PALETTE["accent"], font=("Segoe UI Semibold", 9))
+        count_label.pack(side=tk.RIGHT)
+
+        # --- Debt table with checkboxes ---
+        table_frame = tk.Frame(frame, bg=PALETTE["surface"])
+        table_frame.pack(fill=tk.BOTH, expand=True)
+
+        columns = ("sel", "id_deuda", "contribuyente", "documento", "codigo_lote", "direccion_predio", "sector", "saldo", "estado_cobranza")
+        debt_tree = ttk.Treeview(table_frame, columns=columns, show="headings", style="Modern.Treeview")
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=debt_tree.yview, style="Modern.Vertical.TScrollbar")
+        debt_tree.configure(yscrollcommand=vsb.set)
+        debt_tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+        style_treeview(debt_tree, ttk.Style())
+
+        headings = {
+            "sel": "✓",
+            "id_deuda": "ID",
+            "contribuyente": "Contribuyente",
+            "documento": "Documento",
+            "codigo_lote": "Predio",
+            "direccion_predio": "Dirección",
+            "sector": "Sector",
+            "saldo": "Saldo",
+            "estado_cobranza": "Estado",
+        }
+        widths = {"sel": 35, "id_deuda": 60, "contribuyente": 170, "documento": 100, "codigo_lote": 90, "direccion_predio": 200, "sector": 110, "saldo": 100, "estado_cobranza": 110}
+        for col in columns:
+            debt_tree.heading(col, text=headings[col])
+            debt_tree.column(col, width=widths.get(col, 100), anchor="center")
+
+        # Track selection state
+        selected_debts = {}  # id_deuda -> True/False
+        loaded_debts = []    # raw data from controller
+
+        def update_count():
+            n = sum(1 for v in selected_debts.values() if v)
+            count_label.config(text=f"Seleccionadas: {n}")
+
+        def toggle_selection(event):
+            item = debt_tree.identify_row(event.y)
+            if not item:
+                return
+            values = debt_tree.item(item, "values")
+            if not values or values[1] in ("Cargando...", "Sin deudas", ""):
+                return
+            try:
+                id_deuda = int(values[1])
+            except (ValueError, TypeError):
+                return
+            selected_debts[id_deuda] = not selected_debts.get(id_deuda, False)
+            mark = "☑" if selected_debts[id_deuda] else "☐"
+            debt_tree.set(item, "sel", mark)
+            update_count()
+
+        debt_tree.bind("<ButtonRelease-1>", toggle_selection)
+
+        def select_all():
+            for item in debt_tree.get_children():
+                values = debt_tree.item(item, "values")
+                try:
+                    id_deuda = int(values[1])
+                    selected_debts[id_deuda] = True
+                    debt_tree.set(item, "sel", "☑")
+                except (ValueError, TypeError, IndexError):
+                    pass
+            update_count()
+
+        def select_none():
+            for item in debt_tree.get_children():
+                values = debt_tree.item(item, "values")
+                try:
+                    id_deuda = int(values[1])
+                    selected_debts[id_deuda] = False
+                    debt_tree.set(item, "sel", "☐")
+                except (ValueError, TypeError, IndexError):
+                    pass
+            update_count()
+
+        def load_debts(*_args):
+            for item in debt_tree.get_children():
+                debt_tree.delete(item)
+            selected_debts.clear()
+            update_count()
+            status_label.config(text="Cargando deudas con GPS...")
+            debt_tree.insert("", "end", values=("", "Cargando...", "", "", "", "", "", "", ""))
+
+            sector_text = sector_var.get()
+            id_sector = None
+            if sector_text != "Todos los sectores" and " - " in sector_text:
+                id_sector = int(sector_text.split(" - ")[0])
+
+            def _load():
+                try:
+                    debts = self.controller.listar_deudas_asignables(id_sector)
+                    dialog.after(0, lambda: _apply(debts, None))
+                except Exception as exc:
+                    dialog.after(0, lambda e=exc: _apply([], e))
+
+            def _apply(debts, error):
+                if not dialog.winfo_exists():
+                    return
+                nonlocal loaded_debts
+                loaded_debts = debts or []
+                for item in debt_tree.get_children():
+                    debt_tree.delete(item)
+                if error:
+                    status_label.config(text=f"Error: {error}")
+                    debt_tree.insert("", "end", values=("", f"Error: {error}", "", "", "", "", "", "", ""))
+                    return
+                if not loaded_debts:
+                    status_label.config(text="No hay deudas con GPS disponibles para este sector.")
+                    debt_tree.insert("", "end", values=("", "Sin deudas", "con GPS disponibles", "", "", "", "", "", ""))
+                    return
+                status_label.config(text=f"{len(loaded_debts)} deudas con GPS disponibles")
+                for debt in loaded_debts:
+                    id_d = getattr(debt, "id_deuda", "")
+                    selected_debts[id_d] = False
+                    try:
+                        saldo_fmt = f"S/ {float(getattr(debt, 'saldo', 0) or 0):,.2f}"
+                    except (TypeError, ValueError):
+                        saldo_fmt = "S/ 0.00"
+                    debt_tree.insert("", "end", values=(
+                        "☐",
+                        id_d,
+                        getattr(debt, "contribuyente", "") or "",
+                        getattr(debt, "documento", "") or "",
+                        getattr(debt, "codigo_lote", "") or "",
+                        getattr(debt, "direccion_predio", "") or "",
+                        getattr(debt, "sector", "") or "",
+                        saldo_fmt,
+                        getattr(debt, "estado_cobranza", "") or "",
+                    ))
+
+            threading.Thread(target=_load, daemon=True).start()
+
+        sector_cb.bind("<<ComboboxSelected>>", load_debts)
+
+        # --- Button row ---
+        btn_row = tk.Frame(frame, bg=PALETTE["surface"])
+        btn_row.pack(fill=tk.X, pady=(10, 0))
+
+        HoverButton(btn_row, text="Seleccionar todo", command=select_all, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI", 9), padx=10, pady=6).pack(side=tk.LEFT, padx=(0, 6))
+        HoverButton(btn_row, text="Quitar todo", command=select_none, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI", 9), padx=10, pady=6).pack(side=tk.LEFT, padx=(0, 6))
+        HoverButton(btn_row, text="Cargar deudas", command=load_debts, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI", 9), padx=10, pady=6).pack(side=tk.LEFT)
+
+        HoverButton(btn_row, text="Cancelar", command=dialog.destroy, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 10), padx=14, pady=8).pack(side=tk.RIGHT, padx=(6, 0))
+
         def apply_asignacion():
+            ids = [k for k, v in selected_debts.items() if v]
+            if not ids:
+                messagebox.showwarning("Atención", "No has seleccionado ninguna deuda.", parent=dialog)
+                return
+
             id_usuario = int(notificador_var.get().split(" - ")[0])
-            id_sector = int(sector_var.get().split(" - ")[0])
-            
-            res = self.controller.asignar_sector(id_usuario, id_sector)
+            try:
+                fecha_asignacion = datetime.strptime(fecha_var.get().strip(), "%Y-%m-%d").date()
+            except ValueError:
+                messagebox.showerror("Error", "Formato de fecha inválido. Usa YYYY-MM-DD.", parent=dialog)
+                return
+
+            try:
+                distancia = float(distancia_var.get().strip())
+            except ValueError:
+                distancia = 0
+
+            res = self.controller.asignar_deudas_a_ruta(id_usuario, fecha_asignacion, ids, distancia)
             if res.get("success"):
                 messagebox.showinfo("Éxito", res.get("message"), parent=dialog)
                 self.refresh()
@@ -524,10 +712,7 @@ class RutasView(tk.Frame):
             else:
                 messagebox.showerror("Error", res.get("message"), parent=dialog)
 
-        btn_frame = tk.Frame(frame, bg=PALETTE["surface"])
-        btn_frame.pack(fill=tk.X, side=tk.BOTTOM)
-        HoverButton(btn_frame, text="Cancelar", command=dialog.destroy, bg=PALETTE["surface_soft"], fg=PALETTE["text"], hover_bg="#e2e8f0", active_bg="#e2e8f0", border=PALETTE["border"], font=("Segoe UI Semibold", 10), padx=12, pady=8).pack(side=tk.LEFT)
-        HoverButton(btn_frame, text="Asignar", command=apply_asignacion, bg=PALETTE["accent"], hover_bg=PALETTE["accent_hover"], border=PALETTE["accent"], font=("Segoe UI Semibold", 10), padx=12, pady=8).pack(side=tk.RIGHT)
+        HoverButton(btn_row, text="Asignar ruta", command=apply_asignacion, bg=PALETTE["accent"], hover_bg=PALETTE["accent_hover"], border=PALETTE["accent"], font=("Segoe UI Semibold", 10), padx=14, pady=8).pack(side=tk.RIGHT)
 
     def _render_stats(self):
         for widget in self.summary.winfo_children():

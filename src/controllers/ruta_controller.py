@@ -37,10 +37,12 @@ class RutaController:
 
     def listar_rutas_usuario(self):
         with get_session() as db:
-            return db.query(RutaNotificacion).filter(
-                RutaNotificacion.id_usuario == self.user.id_usuario,
+            query = db.query(RutaNotificacion).filter(
                 RutaNotificacion.fecha_ruta >= date.today()
-            ).order_by(RutaNotificacion.fecha_ruta.desc()).all()
+            )
+            if self.user.id_rol == 3:
+                query = query.filter(RutaNotificacion.id_usuario == self.user.id_usuario)
+            return query.order_by(RutaNotificacion.fecha_ruta.desc()).all()
 
     def listar_deudas_asignadas(self):
         from src.models.contribuyente import EstadoCobranza, Lote, Manzana, Sector, TipoTributo
@@ -228,15 +230,159 @@ class RutaController:
     def obtener_notificadores(self):
         from src.models.usuario import Usuario
         with get_session() as db:
-            # ROL_NAMES = 3: Notificador
+            # Mostrar únicamente notificadores
             return db.query(Usuario).filter(
                 Usuario.activo == True,
                 Usuario.id_rol == 3
             ).all()
 
-    def asignar_sector(self, id_usuario_notificador: int, id_sector: int) -> dict:
+    def listar_deudas_asignables(self, id_sector: int = None):
+        """Lista deudas con coordenadas GPS que no están asignadas a ninguna ruta activa."""
+        from src.models.contribuyente import EstadoCobranza, Lote, Manzana, Sector, TipoTributo
+        from sqlalchemy import and_, exists
+
+        with get_session() as db:
+            Contribuyente = self._get_contribuyente_model()
+
+            # Subquery: deudas que ya están en alguna ruta_detalle de una ruta NO terminada
+            already_assigned = db.query(RutaDetalle.id_deuda).join(
+                RutaNotificacion, RutaDetalle.id_ruta == RutaNotificacion.id_ruta
+            ).filter(
+                RutaNotificacion.estado_ruta != 'TERMINADA'
+            ).subquery()
+
+            query = db.query(
+                Deuda.id_deuda,
+                Contribuyente.nombres.label("contribuyente"),
+                Contribuyente.numero_documento.label("documento"),
+                TipoTributo.nombre.label("tipo_tributo"),
+                Lote.codigo.label("codigo_lote"),
+                Lote.direccion.label("direccion_predio"),
+                Lote.latitud,
+                Lote.longitud,
+                Manzana.codigo.label("manzana"),
+                Sector.nombre.label("sector"),
+                Deuda.saldo_pendiente.label("saldo"),
+                EstadoCobranza.nombre.label("estado_cobranza"),
+            ).join(
+                Contribuyente, Deuda.id_contribuyente == Contribuyente.id_contribuyente
+            ).join(
+                TipoTributo, Deuda.id_tipo_tributo == TipoTributo.id_tipo_tributo
+            ).join(
+                EstadoCobranza, Deuda.id_estado_cobranza == EstadoCobranza.id_estado
+            ).join(
+                Lote, Deuda.id_lote == Lote.id_lote
+            ).join(
+                Manzana, Lote.id_manzana == Manzana.id_manzana
+            ).join(
+                Sector, Manzana.id_sector == Sector.id_sector
+            ).filter(
+                Deuda.activo == True,
+                Deuda.saldo_pendiente > 0,
+                Lote.latitud.isnot(None),
+                Lote.longitud.isnot(None),
+                ~Deuda.id_deuda.in_(db.query(already_assigned.c.id_deuda)),
+            )
+
+            if id_sector:
+                query = query.filter(Manzana.id_sector == id_sector)
+
+            return query.order_by(Deuda.saldo_pendiente.desc()).limit(500).all()
+
+    def asignar_deudas_a_ruta(self, id_usuario_notificador: int, fecha_asignacion: date,
+                               deuda_ids: list[int], distancia_km: float = 0) -> dict:
+        """Crea o reutiliza una ruta y asigna las deudas específicas seleccionadas."""
+        from sqlalchemy import func
+
+        if not deuda_ids:
+            return {"success": False, "message": "No se seleccionaron deudas para asignar."}
+
+        target_date = fecha_asignacion or date.today()
+
+        with get_session() as db:
+            try:
+                # Buscar o crear ruta para ese usuario y fecha
+                ruta = db.query(RutaNotificacion).filter(
+                    RutaNotificacion.id_usuario == id_usuario_notificador,
+                    RutaNotificacion.fecha_ruta == target_date
+                ).first()
+
+                if not ruta:
+                    ruta = RutaNotificacion(
+                        id_usuario=id_usuario_notificador,
+                        fecha_ruta=target_date,
+                        estado_ruta='PLANIFICADA',
+                        total_deudas=0,
+                        deudas_atendidas=0,
+                        distancia_estimada_km=distancia_km,
+                    )
+                    db.add(ruta)
+                    db.flush()
+                else:
+                    # Actualizar distancia si se proporcionó
+                    if distancia_km > 0:
+                        ruta.distancia_estimada_km = distancia_km
+
+                # Obtener deudas ya existentes en esta ruta
+                deudas_existentes = {d[0] for d in db.query(RutaDetalle.id_deuda).filter(
+                    RutaDetalle.id_ruta == ruta.id_ruta
+                ).all()}
+
+                # Obtener último orden de visita
+                max_orden = db.query(func.max(RutaDetalle.orden_visita)).filter(
+                    RutaDetalle.id_ruta == ruta.id_ruta
+                ).scalar() or 0
+                orden = max_orden + 1
+
+                nuevas_deudas = 0
+                for id_deuda in deuda_ids:
+                    if id_deuda not in deudas_existentes:
+                        detalle = RutaDetalle(
+                            id_ruta=ruta.id_ruta,
+                            id_deuda=id_deuda,
+                            orden_visita=orden,
+                            visitado=False
+                        )
+                        db.add(detalle)
+                        orden += 1
+                        nuevas_deudas += 1
+
+                if nuevas_deudas == 0:
+                    db.rollback()
+                    return {"success": False, "message": "Todas las deudas seleccionadas ya estaban asignadas."}
+
+                ruta.total_deudas = (ruta.total_deudas or 0) + nuevas_deudas
+                db.commit()
+
+                # Invalidar caché de Redis para la app web
+                try:
+                    import os
+                    redis_prefix = os.getenv("REDIS_PREFIX", "neplatic:")
+                    cache_key = f"{redis_prefix}rutas_usuario_{id_usuario_notificador}_{target_date.strftime('%Y-%m-%d')}"
+                    if self.redis_publisher.client:
+                        self.redis_publisher.client.delete(cache_key)
+                        logger.info("Caché invalidada en Redis: %s", cache_key)
+                except Exception as cache_error:
+                    logger.error("Error al invalidar caché en Redis: %s", cache_error)
+
+                return {
+                    "success": True,
+                    "message": f"Ruta asignada exitosamente. Se añadieron {nuevas_deudas} deudas a la ruta del {target_date.strftime('%d/%m/%Y')}.",
+                    "id_ruta": ruta.id_ruta,
+                    "nuevas_deudas": nuevas_deudas,
+                }
+            except Exception as e:
+                db.rollback()
+                logger.error("Error al asignar deudas a ruta: %s", e)
+                return {"success": False, "message": f"Error: {e}"}
+
+    def asignar_sector(self, id_usuario_notificador: int, id_sector: int, fecha_asignacion: date = None) -> dict:
+        from sqlalchemy import func
         from src.models.deuda import RutaNotificacion, RutaDetalle, Deuda
         from src.models.contribuyente import Lote, Manzana
+        
+        target_date = fecha_asignacion or date.today()
+        
         with get_session() as db:
             try:
                 # Buscar deudas sin pagar en el sector
@@ -248,28 +394,64 @@ class RutaController:
                 if not deudas:
                     return {"success": False, "message": "No hay deudas pendientes en este sector."}
                 
-                ruta = RutaNotificacion(
-                    id_usuario=id_usuario_notificador,
-                    fecha_ruta=date.today(),
-                    estado_ruta='PLANIFICADA',
-                    total_deudas=len(deudas)
-                )
-                db.add(ruta)
-                db.flush()
-                
-                orden = 1
-                for deuda in deudas:
-                    detalle = RutaDetalle(
-                        id_ruta=ruta.id_ruta,
-                        id_deuda=deuda.id_deuda,
-                        orden_visita=orden,
-                        visitado=False
+                # Buscar si ya existe una ruta para este usuario en esa fecha
+                ruta = db.query(RutaNotificacion).filter(
+                    RutaNotificacion.id_usuario == id_usuario_notificador,
+                    RutaNotificacion.fecha_ruta == target_date
+                ).first()
+
+                if not ruta:
+                    ruta = RutaNotificacion(
+                        id_usuario=id_usuario_notificador,
+                        fecha_ruta=target_date,
+                        estado_ruta='PLANIFICADA',
+                        total_deudas=0
                     )
-                    db.add(detalle)
-                    orden += 1
+                    db.add(ruta)
+                    db.flush()
                 
+                # Obtener las deudas que ya están en esta ruta para evitar duplicados
+                deudas_existentes = {d[0] for d in db.query(RutaDetalle.id_deuda).filter(RutaDetalle.id_ruta == ruta.id_ruta).all()}
+                
+                # Obtener el último orden de visita
+                max_orden = db.query(func.max(RutaDetalle.orden_visita)).filter(RutaDetalle.id_ruta == ruta.id_ruta).scalar() or 0
+                orden = max_orden + 1
+                
+                nuevas_deudas = 0
+                for deuda in deudas:
+                    if deuda.id_deuda not in deudas_existentes:
+                        # Workaround: PostgreSQL SMALLINT limit is 32767.
+                        # Cap the max order to 32767 to avoid NumericValueOutOfRange errors when assigning huge sectors
+                        safe_orden = min(orden, 32767)
+                        detalle = RutaDetalle(
+                            id_ruta=ruta.id_ruta,
+                            id_deuda=deuda.id_deuda,
+                            orden_visita=safe_orden,
+                            visitado=False
+                        )
+                        db.add(detalle)
+                        orden += 1
+                        nuevas_deudas += 1
+                
+                if nuevas_deudas == 0:
+                    db.rollback()
+                    return {"success": False, "message": "Todas las deudas pendientes de este sector ya estaban asignadas a la ruta de hoy."}
+                
+                ruta.total_deudas += nuevas_deudas
                 db.commit()
-                return {"success": True, "message": f"Ruta asignada exitosamente con {len(deudas)} deudas."}
+
+                # Invalidar caché de Redis para la app web
+                try:
+                    import os
+                    redis_prefix = os.getenv("REDIS_PREFIX", "neplatic:")
+                    cache_key = f"{redis_prefix}rutas_usuario_{id_usuario_notificador}_{target_date.strftime('%Y-%m-%d')}"
+                    if self.redis_publisher.client:
+                        self.redis_publisher.client.delete(cache_key)
+                        logger.info("Caché invalidada en Redis: %s", cache_key)
+                except Exception as cache_error:
+                    logger.error("Error al invalidar caché en Redis: %s", cache_error)
+
+                return {"success": True, "message": f"Sector asignado. Se añadieron {nuevas_deudas} deudas a la ruta del día."}
             except Exception as e:
                 db.rollback()
                 logger.error("Error al asignar sector: %s", e)
