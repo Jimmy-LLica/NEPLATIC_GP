@@ -175,13 +175,33 @@ class RutaController
         try {
             $pdo->beginTransaction();
             
+            // Mapeo de compatibilidad: traduce valores del frontend viejo al código real de BD
+            $mapeoResultados = [
+                'NOTIFICADO_TITULAR' => 'NOTIFICADO',
+                'NOTIFICADO_TERCERO' => 'NOTIFICADO',
+                'PUERTA_CERRADA'     => 'AUSENTE',
+                'RECHAZO_RECEPCION'  => 'RECHAZADO',
+                'DIRECCION_INCORRECTA' => 'DIR_ERRADA',
+            ];
+            $resultado = $mapeoResultados[$resultado] ?? $resultado;
+
+            // Obtener el ID del estado
+            $stmtEstado = $pdo->prepare("SELECT id_estado_notif FROM neplatic.estado_notificacion WHERE codigo = ?");
+            $stmtEstado->execute([$resultado]);
+            $idEstado = $stmtEstado->fetchColumn();
+
+            if (!$idEstado) {
+                throw new \Exception("Estado de notificación inválido: $resultado");
+            }
+            
             // Registrar notificación
-            $stmt = $pdo->prepare("INSERT INTO neplatic.notificacion (id_deuda, id_usuario, resultado, observacion) VALUES (?, ?, ?, ?)");
-            $stmt->execute([$idDeuda, $usuarioId, $resultado, $observacion]);
+            $stmt = $pdo->prepare("INSERT INTO neplatic.notificacion (id_deuda, id_usuario, id_estado_notif, comentario) VALUES (?, ?, ?, ?) RETURNING id_notificacion");
+            $stmt->execute([$idDeuda, $usuarioId, $idEstado, $observacion]);
+            $idNotificacion = $stmt->fetchColumn();
             
             // Actualizar ruta
-            $stmt2 = $pdo->prepare("UPDATE neplatic.ruta_detalle SET fue_visitado = true, resultado_notificacion = ? WHERE id_ruta = ? AND id_deuda = ?");
-            $stmt2->execute([$resultado, $idRuta, $idDeuda]);
+            $stmt2 = $pdo->prepare("UPDATE neplatic.ruta_detalle SET visitado = true, id_notificacion = ? WHERE id_ruta = ? AND id_deuda = ?");
+            $stmt2->execute([$idNotificacion, $idRuta, $idDeuda]);
             
             $pdo->commit();
             

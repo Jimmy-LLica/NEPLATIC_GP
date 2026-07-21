@@ -100,11 +100,11 @@
           <label>Resultado de Notificación:</label>
           <select v-model="formNotificacion.resultado" required>
             <option value="">Seleccione un resultado</option>
-            <option value="NOTIFICADO_TITULAR">Notificado al Titular</option>
-            <option value="NOTIFICADO_TERCERO">Notificado a Tercero</option>
-            <option value="PUERTA_CERRADA">Puerta Cerrada (Bajo Puerta)</option>
-            <option value="RECHAZO_RECEPCION">Rechazo de Recepción</option>
-            <option value="DIRECCION_INCORRECTA">Dirección Incorrecta</option>
+            <option value="NOTIFICADO">Notificado exitosamente</option>
+            <option value="AUSENTE">Contribuyente ausente</option>
+            <option value="DIR_ERRADA">Dirección errónea</option>
+            <option value="RECHAZADO">Notificación rechazada</option>
+            <option value="FALLECIDO">Contribuyente fallecido</option>
           </select>
         </div>
         
